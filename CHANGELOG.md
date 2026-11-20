@@ -4,7 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] — 2026-11-20
+
+**In short:** the old expert-seat system is gone. Setup recruits no experts and writes no seat
+cards; each part of your stack gets its watch lists on the stack page instead. Every mode is one
+page, with no shared engine and no stage rule files behind it, and the plugin is about 6% smaller.
+A large repository can be mapped on a cheaper model if you choose one at setup.
+
+### Before you update
+- **Finish or pause any open council run first.**
+- **A run from before 2.0 can't be carried on.** It is told apart by its stages (Assign, Brief or
+  Collect), its mode (`context-core`) or a missing brief. Resuming or moving it on is refused with
+  the next step: close it paused (`council run close --run <name> --status paused`), then start
+  the work again. `council status`, `council run export` and the start-of-session note still read
+  it, and its old `ledger.tsv` and seat cards are left where they are.
+- **Old config lines are ignored.** `## Roster`, `- cards:`, `- ledger:` and `- seat models:` are
+  read and unused; `council doctor` names them, and a `/council-init` refresh removes them on your
+  yes, deleting no card file.
+- **No test of stage 6 has been run** (redesign 2.0, section 16): no model run, drill or setup of
+  a real project went through 6a or 6b before this release.
+
+### Removed
+- Stage 6b of the redesign (section 16; D76–D78): the old seat system's pages and code. The ten
+  stage rule files (`references/doctrine/`), the `context-core` skill, the expert catalogue, the
+  seat card and seat page templates, the command reference, the war room, `workflow.md` and
+  `builder-loop.md` are deleted; `council collect` and `council ledger` are retired, each refused
+  with what to use instead (`council check`; `council status --run <folder>`), and `run close`
+  writes no seat record. A run can no longer enter Assign, Brief or Collect: `council state` names
+  the stages there are. `evals/run_seats.py` and `evals/run_phrases.py` go with what they tested.
+
+### Added
+- `map=` on the config's `- models:` line (D78): the model setup's mapping workers run on —
+  `inherit` (the default), `sonnet` or `haiku`. `/council-init` proposes it once for a large
+  repository and writes it on your pick; `council run plan check` accepts a mapping worker's model
+  row only when it matches, and refuses any other model for `map=` in the line itself.
 
 ### Changed
 - Stage 6a of the redesign (`docs/design/redesign-2.0.md`, section 16; D72–D75): the expert seats
@@ -17,8 +50,7 @@ All notable changes to this project are documented here. The format is based on
   (`council run open test-architect`, `run-plan-audit.tsv`, `audit-brief.md`) with no
   `context-core`. An older config's `## Roster`, `- cards:`, `- ledger:` and `- seat models:` are
   read and unused: `council doctor` warns, and a council-init refresh removes them on the owner's
-  yes, deleting no card file. A plan check refuses a seat's own `sonnet` or `haiku`. Stage 6b
-  (deleting the old pages and code) is not built.
+  yes, deleting no card file. A plan check refuses a seat's own `sonnet` or `haiku`.
 
 ## [2.0.0] — 2026-11-20
 

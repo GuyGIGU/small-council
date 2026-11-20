@@ -1,8 +1,7 @@
 # Brief — mapping <project>
 <!-- A large repository's map (council-init, Phase D; D72): the main session writes this to <run>/brief.md, one
      `### map-<area>` block per top-level area (four at most), every <…> filled. Each area is mapped by a plain
-     `small-council:council-worker`, recorded with `council seat`; no stage rule file is followed and
-     `council collect` is not run. -->
+     `small-council:council-worker`, recorded with `council seat`, on the model the config's `- models: map=` names (D78). -->
 Deliverable: one seat file per area, <run folder>/seats/map-<area>.md; the main session merges them into <council home>/map.md
 Code root: <code root> · Council home: <council home> · Run: <run folder>
 

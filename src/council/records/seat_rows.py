@@ -1,4 +1,4 @@
-"""One seat's rows across a run's files, as `council collect` lists a seat: its seats.tsv cells, the tool calls its
+"""One seat's rows across a run's files, as the helper reads a seat: its seats.tsv cells, the tool calls its
 agents reported (tools.tsv) and the plan's word on it (run-plan.tsv: a verifier's role, a tool-call budget)."""
 from __future__ import annotations
 

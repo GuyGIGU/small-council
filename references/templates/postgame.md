@@ -7,7 +7,7 @@ its summary in chat, and the next move. The rules for next tasks and verdicts st
 
 ```
 ---
-(the doctrine's frontmatter, kind: postgame)
+(the frontmatter, kind: postgame)
 ---
 # Post-game: <feature>
 **Your request:** `.council/asks/<file>` — "<first ~12 words>…" (<source>)

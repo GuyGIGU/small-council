@@ -27,7 +27,6 @@ COMMANDS = {  # each module's main takes (args, the words after the command's ow
     "gate": "gate",
     "gates": "gate_list",
     "changed": "changed",
-    "collect": "collect",
     "check": "check",
     "index": "index",
     "prior": "prior",
@@ -35,7 +34,6 @@ COMMANDS = {  # each module's main takes (args, the words after the command's ow
     "book": "book",
     "restore": "restore",
     "fingerprint": "fingerprint",
-    "ledger": "ledger",
     "ask": "ask",
     "memory": "memory",
     "doctor": "doctor",
@@ -62,12 +60,18 @@ USAGES = {  # a sub of `run` or `cap` with no row; run's is built from COMMANDS,
 }
 CAP_SUBS = ("", "check", "allow")
 TOP = {key.split(" ")[0] for key in COMMANDS}
-RETIRED = {  # a command 1.2.0 removed (D44), by its words, and what to do instead
-    "route": "size the run from the doctrine's size limits and the config's `- estimates:` line, record it in "
-             "run-plan.tsv, then: council run plan check",
-    "ledger advice": "council ledger [N] shows each seat's record over the last N runs; weigh it from there",
-    "evidence show": "the claims and their verdicts are in <run>/claims.jsonl, which council evidence check builds "
-                     "and checks; council status counts them",
+RETIRED = {  # a removed command, by its words: the version that removed it (D44; D76), and what to do instead
+    "route": ("1.2.0", "the run's plan opens with its size and estimate (council run open writes run-plan.tsv); "
+                       "change them there from the mode's page and the config's `- estimates:` line, then: council "
+                       "run plan check"),
+    "evidence show": ("1.2.0", "the claims and their verdicts are in <run>/claims.jsonl, which council evidence check "
+                               "builds and checks; council status counts them"),
+    "collect": ("2.1.0", "council check reads the run's synthesis or seat files (council check <seat file> for one) "
+                         "and names each citation or quote that does not hold; the seat-check hook holds a seat file "
+                         "to its shape as its agent stops"),
+    "ledger": ("2.1.0", "nothing is recorded per seat any more: council status --run <folder> has a run's own "
+                        "figures, and a bug found late becomes a check or a line in the book (council book note); an "
+                        "older ledger.tsv is left where it is and read by nothing"),
 }
 
 
@@ -108,7 +112,7 @@ def _retired(words: list[str]) -> None:
     """Refuse a removed command as an unknown one, naming what to do instead (D19)."""
     for key in (" ".join(words[:2]), " ".join(words[:1])):
         if key in RETIRED:
-            raise cli.Refusal("unknown command '%s' — removed in 1.2.0: %s" % (key, RETIRED[key]))
+            raise cli.Refusal("unknown command '%s' — removed in %s: %s" % ((key,) + RETIRED[key]))
 
 
 def _usage() -> int:

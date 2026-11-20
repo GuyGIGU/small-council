@@ -3,7 +3,7 @@
 `- models: builder=opus, review=sonnet, verifier=opus`. A name is what the Agent tool's `model` parameter
 takes: inherit (the session's model) or an alias, never a versioned id that goes stale. A role the line
 leaves out, and every role without the line, is `inherit`, so nothing changes until a project opts in.
-`- seat models:` (D30's mapping and survey overrides) is its own line and reads as it always has.
+`map=` names the model of council-init's mapping workers, and takes inherit, sonnet or haiku only (D78).
 """
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ INHERIT = "inherit"
 ORDER = ("haiku", "sonnet", "opus", "fable")      # weakest first: a verifier is never below its builder
 NAMES = (INHERIT,) + ORDER[::-1]
 SAID = ", ".join(NAMES[:-1]) + " or " + NAMES[-1]  # "inherit, fable, opus, sonnet or haiku", for refusals
-ROLES = ("builder", "review", "verifier")
+ROLES = ("builder", "review", "verifier", "map")
+MAP_NAMES = (INHERIT, "sonnet", "haiku")           # a mapping worker: the session's model or a cheaper one (D78)
 
 
 class Models(NamedTuple):
@@ -28,6 +29,7 @@ class Models(NamedTuple):
     verifier: str = INHERIT
     written: bool = False
     problem: str = ""
+    map: str = INHERIT          # setup's mapping workers (D78); last, so the older positional calls stand
 
     def of(self, role: str) -> str:
         """The model of a role ('' for a role the line has no word for: the Chair, a diagnosis seat)."""
@@ -57,9 +59,11 @@ def refusal(role: str, equals: str, name: str, chosen: dict[str, str]) -> str:
     if not equals or not role:
         return "%s: '%s' is not role=model — write builder=, review= or verifier= with a model" % (where, role)
     if role not in ROLES:
-        return "%s: '%s' is not a role — use builder, review or verifier" % (where, role)
+        return "%s: '%s' is not a role — use builder, review, verifier or map" % (where, role)
     if role in chosen:
         return "%s names %s twice — keep one" % (where, role)
+    if role == "map" and name not in MAP_NAMES:
+        return ("%s: '%s' is not a model for map — a mapping worker takes inherit, sonnet or haiku" % (where, name))
     if name not in NAMES:
         return "%s: '%s' is not a model for %s — use %s" % (where, name, role, SAID)
     return ""
@@ -77,7 +81,9 @@ def weaker(verifier: str, builder: str) -> bool:
 
 
 def shown(found: Models) -> list[str]:
-    """['  models: builder=opus · review=sonnet · verifier=opus (council.config.md)'], or [] without the line."""
+    """['  models: builder=opus · review=sonnet · verifier=opus (council.config.md)'], or [] without the line; map=
+    is shown only when it names a model."""
     if not found.written or found.problem:
         return []
-    return ["  models: %s (council.config.md)" % " · ".join("%s=%s" % (r, found.of(r)) for r in ROLES)]
+    roles = [role for role in ROLES if role != "map" or found.map != INHERIT]
+    return ["  models: %s (council.config.md)" % " · ".join("%s=%s" % (r, found.of(r)) for r in roles)]

@@ -18,7 +18,7 @@ from council.commands import cli
 from council.commands.doctor import Doctor
 
 FILES = (".claude/settings.local.json", ".claude/settings.json")
-COMMANDS = ("run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
+COMMANDS = ("run", "state", "seat", "index", "check", "ask", "prior", "memory", "gates", "map",
             "doctor", "home", "fingerprint", "status", "evidence", "repair", "version", "context", "tree",
             "patch", "init", "book", "restore")
 RULES = ("Edit(.council/**)",) + tuple("Bash(council %s:*)" % command for command in COMMANDS)

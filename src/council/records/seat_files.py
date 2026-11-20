@@ -1,7 +1,7 @@
 """A run's seat files and the brief that names them: the brief's seat blocks, a reference doc's title as a worker
 proves it read it, a seat file's item lines and the shape of its item sections, a verify file's shape, and an
 agent's BLOCKED: line (in its reply or its file).
-`council collect` and `council check` read seat files through these; hooks/seat-gate.sh keeps its own copy of
+`council check` reads seat files through these; hooks/seat-gate.sh keeps its own copy of
 the item-section rule (index_shape): change both together."""
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def blocked(lines: list[str]) -> str:
     """The BLOCKED: line of an agent's stop, stripped, or '': BLOCKED in capitals at a line's start (after spaces, a
     quote mark or markdown, **BLOCKED:**) and no letter after it, on any line; or `blocked:` in any case as the first
     line with text. The one reader, for a builder's reply (builder_stop), a worker's and a verifier's (the seat gate,
-    through builder_stop blocked) and a seat file's head (council collect, lines 2 to 9)."""
+    through builder_stop blocked) and a seat file's head (lines 2 to 9)."""
     told = [line.strip() for line in lines if line.strip()]
     if told and BLOCKED_FIRST.match(told[0]):
         return told[0]

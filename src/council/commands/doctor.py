@@ -101,7 +101,7 @@ def unused_seats(doc: Doctor) -> None:
     - ledger: lines, which no run reads, the project's own pages the roster points at (watch lists now) and the
     seat cards on disk. One warning, and nothing at all for a config that carries none of them."""
     native = where.native(doc.home)
-    rows = config.roster_table(native)
+    rows = config.old_roster(native)
     written = rows or any(line.strip() for _, line in config.section(native, "roster"))
     carried = ["its ## Roster section (%d seat(s))" % len(rows)] if written else []
     for _, line in config.section(native, "memory"):
@@ -110,9 +110,8 @@ def unused_seats(doc: Doctor) -> None:
             carried.append("its `- %s:` line" % found.key)
     if not carried:
         return
-    pages = sorted({bytewise.shown(row.reference) for row in rows
-                    if row.reference and not row.reference.startswith("references/")
-                    and row.reference not in ("none", "n/a", "-")})
+    pages = sorted({bytewise.shown(ref) for ref in rows
+                    if ref and not ref.startswith("references/") and ref not in ("none", "n/a", "-")})
     cards = _cards(doc.home)
     said = "%s still carries the expert seats, which no run reads: %s" % (config.NAME, ", ".join(carried))
     if pages:
@@ -185,9 +184,9 @@ def run_plans(doc: Doctor) -> None:
             code, said = _plan_check(folder)
             if code:
                 last = said[-1] if said else ""
-                if phase in ("convene", "prepare", "assign"):
+                if phase in ("convene", "prepare"):
                     doc.warn("run %s has a run plan that is not ready yet (%s)" % (name, last),
-                             "complete it before Brief, then run: council run plan check --run %s" % name)
+                             "complete it before Work, then run: council run plan check --run %s" % name)
                 else:
                     doc.error("run %s has an invalid run plan (%s)" % (name, last),
                               "fix it, then run: council run plan check --run %s" % name)

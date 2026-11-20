@@ -97,7 +97,7 @@ def made_elsewhere(run: Run, part: list[Entry], sessions: set[str]) -> tuple[dat
 
 def size_first(run: Run, part: list[Entry], calls: list[ToolCall], sessions: set[str], say: Say) -> None:
     """The run's size and cost on record (council state size=…) before its first agent went out: the user approves a
-    size and a cost before anything is dispatched (doctrine 01-convene, steps 5-9)."""
+    size and a cost before anything is dispatched (each mode's page, its estimate step)."""
     label = "Size and cost before the first dispatch"
     first_at, elsewhere = made_elsewhere(run, part, sessions)
     if elsewhere:
@@ -126,7 +126,7 @@ def size_first(run: Run, part: list[Entry], calls: list[ToolCall], sessions: set
 
 def first_card(run: Run, part: list[Entry], calls: list[ToolCall], sessions: set[str], say: Say) -> None:
     """The status card at the first dispatch: between the first agent sent (or recorded) and its first result.
-    It is owed once per run, at the run's first dispatch (context-core, "Talking to the user"): a run carried
+    It is owed once per run, at the run's first dispatch: a run carried
     on in a later session made that dispatch in an earlier one, so a transcript that didn't make it owes none."""
     label = "Status card at the first dispatch"
     first_at, elsewhere = made_elsewhere(run, part, sessions)
@@ -194,7 +194,7 @@ def closing_card(run: Run, part: list[Entry], calls: list[ToolCall], closed: dat
 
 
 def rulings_once(run: Run, part: list[Entry], calls: list[ToolCall], say: Say) -> None:
-    """The rulings as one question (doctrine 09-deliver, step 6): at most one AskUserQuestion from the run's step into
+    """The rulings as one question (D10): at most one AskUserQuestion from the run's step into
     Deliver (council state phase=deliver, else its event's time) to its close. Its harmless items go together and
     each real hazard is a question of its own, all in that one call."""
     label = "Rulings as one question"

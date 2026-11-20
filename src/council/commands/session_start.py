@@ -7,6 +7,7 @@ import re
 import stat
 import sys
 import time
+from pathlib import Path
 
 from council import git
 from council.commands import cli, doctor_hooks
@@ -21,7 +22,7 @@ RESUME = "references/run/resume.md"    # the rules for carrying a run on, named 
 RUN_LINES = {   # one open run of this tree's or this session's, by what it is to this session
     "paused": ("- PAUSED COUNCIL RUN: {seen}. Resume it only when the user asks: council run resume --run {name}, then "
                "re-invoke the {skill} skill and read its session-state.md.{resume}{away}"),
-    "driving": ("- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: {where}). Re-invoke the {skill} skill{loads}, read "
+    "driving": ("- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: {where}). Re-invoke the {skill} skill, read "
                 "{dir}/session-state.md (and ask.md, if present), {redo}, and continue from there."
                 "{resume}{seats} Do not restart, do not re-dispatch seats that are running or done (wait for their "
                 "notifications), do not skip the completeness check.{runflag}"),
@@ -42,6 +43,9 @@ RUN_LINES = {   # one open run of this tree's or this session's, by what it is t
                    "it (council run resume --run {name}, then re-invoke the {skill} skill and read its "
                    "session-state.md) or close it (council run close --run {name} --status abandoned)."
                    "{resume}{runflag}"),
+    "old": ("- COUNCIL RUN FROM AN OLDER VERSION: {seen}. It can't be carried on: {old}, and this version no longer "
+            "runs that path. Tell the user; on their word {close} and start the work again with the {skill} skill. Its "
+            "record stays readable (council status --run {name})."),
 }
 
 
@@ -233,7 +237,12 @@ def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here
     said["runflag"] = said["away"] or (" Several runs are open on this tree: pass --run %s to every council command "
                                        "for this one." % said["name"] if here_n > 1 else "")
     said["at"] = "in another working tree (%s)" % _flat(at, PATH) if said["away"] else "on this working tree"
-    said["loads"], said["redo"] = _method(r.mode, phase)
+    said["redo"] = _method(phase)
+    said["old"] = _old(r.folder)
+    said["close"] = ("leave it paused" if r.status == "paused" else
+                     "close it paused (council run close --run %s --status paused)" % said["name"])
+    if said["old"]:
+        return RUN_LINES["old"].format(**said)
     if r.status == "paused":
         kind = "paused"
     elif event == "compact":
@@ -249,14 +258,19 @@ def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here
     return RUN_LINES[kind].format(**said)
 
 
-def _method(mode: str, phase: str) -> tuple[str, str]:
-    """What the driving line says to load and to re-read: a one-page mode's own page, at its section for the phase
-    (references/run/resume.md); a mode still on context-core, it and the doctrine for the phase."""
+def _method(phase: str) -> str:
+    """What the driving line says to re-read: the mode's own page, at its section for the phase
+    (references/run/resume.md)."""
     log = " and the build log" if phase == "build" else ""
-    if mode in stages.ONE_PAGE:
-        return "", "re-read that page's section for the current phase (%s)%s" % (phase or "unknown", log)
-    return (" (it loads context-core)", "re-read its build loop and the build log" if phase == "build"
-            else "re-read the doctrine for that phase")
+    return "re-read that page's section for the current phase (%s)%s" % (phase or "unknown", log)
+
+
+def _old(folder: str) -> str:
+    """What marks the run as one from before 2.0 (stages.old_path, D77), as one line; '' for a run of today's or one
+    that can't be read."""
+    with contextlib.suppress(Exception):
+        return _flat(stages.old_path(Path(where.native(folder))), PATH)
+    return ""
 
 
 def _elsewhere(others: list[str], n_other: int, gone: list[str], n_gone: int) -> None:

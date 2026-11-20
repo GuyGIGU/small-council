@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from council.commands import cli, event_note, resolve
+from council.commands import cli, closed, event_note, resolve
 from council.records import paths, runs, state, state_write
 from council.records import home as where
 
@@ -31,6 +31,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     if status in ("complete", "abandoned"):
         raise cli.Refusal("%s is closed (%s) — open a new run instead: council run open %s"
                           % (run.name, status, runs.skill(resolve.field(run, "mode"))))
+    closed.refuse_old(run, "resumed")
     try:
         state_write.change(run, ["status=in-progress", "session=" + session])
     except state_write.StateError as failure:

@@ -1,7 +1,7 @@
 """council memory select [path|slug …]: the memory entries that apply — every-run entries, and scoped ones whose
 **Scope:** covers a key. The keys are the paths and slugs given, and a run's own: its changed files (index.md),
-its seats (or, before any is recorded, the whole roster) and its mode. With no words the run is required; with
-words, a run open here adds its keys, and several open runs leave only the words."""
+its seats (or, before any is recorded, the seats its plan selects) and its mode. With no words the run is required;
+with words, a run open here adds its keys, and several open runs leave only the words."""
 from __future__ import annotations
 
 import os
@@ -9,8 +9,8 @@ import re
 from pathlib import Path
 
 from council.commands import cli, resolve
-from council.commands.memory import Memory, slugs
-from council.records import bytewise, earlier, memory, scope, seats
+from council.commands.memory import Memory
+from council.records import bytewise, earlier, memory, plan, scope, seats
 from council.records import home as where
 from council.records.bytewise import DOT, EM
 from council.records.memory_entries import cells
@@ -23,7 +23,7 @@ def select(args: cli.Args, found: Memory, words: list[str]) -> int:
     keys = [k + "/" if not k.endswith("/") and os.path.isdir(where.native(tree + "/" + k)) else k for k in words]
     run = _run(args, found.home, words)
     if run:
-        keys += run_keys(run, found.home)
+        keys += run_keys(run)
     out, said = Selection(keys, tree).lines(found.served)
     cli.say_all(out)
     for line in said:
@@ -47,15 +47,17 @@ def _run(args: cli.Args, home: str, words: list[str]) -> str:
         return ""
 
 
-def run_keys(run: str, home: str) -> list[str]:
-    """A run's own keys: its changed files, the seats it worked (the whole roster before any) and its mode."""
+def run_keys(run: str) -> list[str]:
+    """A run's own keys: its changed files, the seats it worked (before any is recorded, the seats its plan selects:
+    the brief is written then, D76) and its mode."""
     folder = where.native(run)
     keys = [bytewise.shown(p) for p in earlier.indexed(Path(folder))]
     worked, any_row = seats.worked(Path(folder))
     keys += [bytewise.shown(s) for s in worked]
     keys.append(resolve.field(Path(folder), "mode"))
     if not any_row:
-        keys += [bytewise.shown(s) for s in slugs(home)]
+        keys += [slug for slug, fields in plan.summary(Path(folder))["seats"].items()
+                 if fields.get("disposition") == "selected"]
     return keys
 
 

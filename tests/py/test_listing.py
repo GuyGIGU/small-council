@@ -64,8 +64,8 @@ class ListingTest(support.Scratch):
         self.assertEqual(runs.skill("council-review"), "council-review")
         self.assertEqual(runs.skill("review"), "council-review")
         self.assertEqual(runs.skill("spec-writer"), "spec-writer")
-        self.assertEqual(runs.skill("odd"), "context-core")
-        self.assertEqual(runs.skill(""), "context-core")
+        self.assertEqual(runs.skill("context-core"), "context-core")     # an older run's mode, as it was written
+        self.assertEqual(runs.skill(""), "council")
 
 
 class SummaryTest(support.Scratch):
@@ -78,8 +78,8 @@ class SummaryTest(support.Scratch):
                    "c\tdone\t-\t-\t-\t-\n"
                    "d\tblocked\t-\t-\t-\t-\n"
                    "e\tskipped\t-\t-\t-\t-\n")
-        self.assertEqual(runs.seat_summary(run), "still working: a (war-room round 2), b · done: c · failed: d")
-        self.assertEqual(runs.seat_summary(run, "working"), "working: a (war-room round 2), b · done: c · failed: d")
+        self.assertEqual(runs.seat_summary(run), "still working: a, b · done: c · failed: d")
+        self.assertEqual(runs.seat_summary(run, "working"), "working: a, b · done: c · failed: d")
 
     def test_nothing_to_say(self) -> None:
         run = self.run_folder()

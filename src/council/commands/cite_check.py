@@ -1,5 +1,5 @@
 """Whether each place a citation names is there: on disk, in the change's base, or among the run's own files.
-`council collect` and `council check` read every item's citation with it."""
+`council check` reads every item's citation with it."""
 from __future__ import annotations
 
 import os

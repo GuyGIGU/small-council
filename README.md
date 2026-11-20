@@ -3,9 +3,9 @@
 **A council for Claude Code that reviews, plans and builds, where every finding is checked before you see it.**
 
 [![CI](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml/badge.svg)](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.2.0-black.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.0-black.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
-[![Any stack](https://img.shields.io/badge/stack-any-black.svg)](references/roster/expert-catalog.md)
+[![Any stack](https://img.shields.io/badge/stack-any-black.svg)](references/watch-lists.md)
 
 A review sends two agents at once: one reads your change against what it claims and traces its
 callers, the other runs the project's checks on the old and the new version in a scratch copy. The
@@ -14,7 +14,7 @@ sensitive subject also gets an independent check. Nothing reaches you on an agen
 keeps a memory and a map, so the tenth run knows what the first one learned.
 
 Forked from Sam Hudson's [Carmack Council](https://github.com/SamJHudson01/Carmack-Council), which
-gave Claude Code ten named experts and a philosophy. Small Council keeps the experts and adds the part
+gave Claude Code ten named experts and a philosophy. Small Council keeps their principles as reading and adds the part
 that was missing: **proof**.
 
 ---
@@ -30,8 +30,8 @@ behind each one.
 | **Nothing fakes a pass** | No checks configured? The report says **NOTHING WAS CHECKED**, in those words. | "Tests pass" with no test runner in sight. |
 | **Every run is sized and billed** | Proposed first with seats and cost. A hook stops new agents at the cap. Estimate before, actual after. | Spawn all ten, every time. |
 | **Builds leave proof** | Each task records a check that failed before the change and passed after, saved to disk. The receipt lists every shortcut taken. | An implementation log. |
-| **Your project remembers** | Decisions, accepted patterns and observed failures, each with its evidence. A codebase map. A track record per expert. | A conventions file. |
-| **Any stack** | Setup detects your stack and recasts the roster: a Godot game, a Python trading engine and a Swift app each get the experts they need. | One stack, hardcoded. |
+| **Your project remembers** | Decisions, accepted patterns and observed failures, each with its evidence. A codebase map. | A conventions file. |
+| **Any stack** | Setup detects your stack and names the watch lists that fit each part: a Godot game, a Python trading engine and a Swift app each get their own. | One stack, hardcoded. |
 
 ## Quick start
 
@@ -52,7 +52,7 @@ check that `python --version` works in Git Bash (the Microsoft Store stub doesn'
    review the change at once, whatever its size. You get what happens and what it costs, with a
    recommendation, and findings with `file:line`, each checked before you see it.
 3. **Full setup, once per project:** `/council-init`, which the first review offers at its end. It
-   detects your stack, fits the experts to it, dry-runs your test, lint and build commands, maps the
+   detects your stack, asks why each part was chosen, dry-runs your test, lint and build commands, maps the
    code, and shows you all of it before writing `.council/`. It asks three things: which missing
    checks to fit (or "not now"), whether the council is shared with a team or just you, and the
    permission rules. Say yes to the rules, or every bookkeeping step asks. The checks themselves
@@ -122,9 +122,9 @@ stage, who is working and the spend. `/council-view` opens the pane again if you
 ## How the proof works
 
 1. **Parallel readers, one writer.** Agents read side by side in isolated contexts (a review's two
-   agents; a plan's experts). One builder changes code.
+   agents; a plan's designer). One builder changes code.
 2. **Gather once, share with everyone.** The Chair builds a change index, runs your checks and selects
-   the memory in scope. Every expert gets the same brief.
+   the memory in scope. Every agent gets the same brief.
 3. **Aggregate, then judge, then challenge.** The Chair merges by root cause and cuts what doesn't
    matter at your scale. Then verifiers who never saw the reasoning re-check each kept claim and
    every cut P1, and return CONFIRMED, REFUTED, UNCERTAIN or MISCITED with `path:line` evidence.
@@ -136,18 +136,18 @@ stage, who is working and the spend. `/council-view` opens the pane again if you
 Independent research has since found the same shape: a critic forced to cite code evidence beats
 both a single reviewer and a larger panel, while a critic that merely agrees makes things worse.
 
-## The experts
+## The watch lists
 
 Security (Troy Hunt) · Structure (Martin Fowler) · Tests (Kent Beck) · Frontend (Kent C. Dodds) ·
 Backend (Matteo Collina) · Data integrity (Brandur Leach) · UI (Karri Saarinen) · UX (Vitaly Friedman) ·
 Accessibility (Heydon Pickering) · Concurrency (Brian Goetz) · Untrusted input (Meredith Patterson) ·
 Operability (Michael Nygard) · LLM pipelines (Simon Willison) · Performance.
 
-The experts sit on plans, research and post-games; a review uses its two agents instead. Each seat is a reference document of that expert's published principles, with a section on applying
-it to another stack. Setup recasts seats to your project and drops the ones with nothing to check:
-a trading engine gets a numerical-correctness seat in Willison's chair; a game gets a charter seat.
-John Carmack chairs: simplicity over cleverness, concrete over abstract, economic over aesthetic.
-See the [expert catalog](references/roster/expert-catalog.md).
+Fourteen checklist pages, each drawn from that practitioner's published principles, with a section on
+applying it to another stack. They are reading for an agent, never characters to play: setup names
+the lists that fit each part of your stack, a brief hands an agent two at most, and a project can add
+its own. John Carmack chairs: simplicity over cleverness, concrete over abstract, economic over aesthetic.
+See [the table](references/watch-lists.md).
 
 ## Compared with the Carmack Council
 
@@ -156,10 +156,10 @@ is what it became after three months of real runs.
 
 | | Carmack Council | Small Council |
 |---|---|---|
-| Skills | 5 | 8, on a shared engine with ten stages |
-| Stack | Next.js / tRPC / Prisma, hardcoded | detected per project, 14 seats recast |
+| Skills | 5 | 10, each its own page |
+| Stack | Next.js / tRPC / Prisma, hardcoded | detected per project, 14 watch lists |
 | Checks on findings | none | blind verifiers, citation check, evidence grades |
-| Records | one output folder per review | runs, ledger, usage, memory, map, every request word for word |
+| Records | one output folder per review | runs, usage, memory, map, every request word for word |
 | Cost control | none | caps, estimates, a hook that stops at the limit |
 | Machinery | none | a helper of about 22,000 lines of Python behind a 53-line bash launcher, 5 hooks, 28 eval jobs on Windows, macOS and Linux |
 | Shared repos | commits conventions.md | a "just me" mode that keeps the council out of git, CLAUDE.md and commit messages |
@@ -170,10 +170,9 @@ The principles are the same. The difference is that this one can tell you when i
 
 ```
 .council/
-├── council.config.md   experts, checks, rules, preferences      tracked
+├── council.config.md   checks, rules, preferences               tracked
 ├── conventions.md      memory: your decisions and patterns       tracked
 ├── map.md              where things live                         tracked
-├── cards/  ledger.tsv  each expert's brief and track record      tracked
 ├── plans/ reviews/ logs/ research/ postgames/                    tracked
 ├── asks/               your requests, word for word              local only
 └── runs/               working files of each run                 local only
@@ -213,12 +212,12 @@ On **just me**, all of `.council/` stays local.
 
 ## Under the hood
 
-Three agents (an expert worker, a blind verifier and a builder that writes one task's code), a helper
+Three agents (a worker, a blind verifier and a builder that writes one task's code), a helper
 called `council` (Python 3.8+, started by a 53-line bash launcher) that does the bookkeeping, five hooks
-that enforce limits and pick runs back up after a compaction, and fourteen expert seats tailored to
-each project.
+that enforce limits and pick runs back up after a compaction, and fourteen watch lists named per
+project.
 
-More: [helper commands](references/run/helper-commands.md) · [reference docs](references/README.md) ·
+More: [reference docs](references/README.md) ·
 [sharing](references/run/sharing.md) · [checks](references/guardrails.md) ·
 [what's built and tested](docs/roadmap-status.md) · [CHANGELOG](CHANGELOG.md)
 

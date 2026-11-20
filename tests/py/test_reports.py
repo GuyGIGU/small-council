@@ -1,5 +1,5 @@
-"""The pieces behind council fingerprint, map status, ledger and ask save: the stack summary's sums, the map's
-stamp and areas, the ledger's cells as awk read them, a filed request's sections, and the one-line fields."""
+"""The pieces behind council fingerprint, map status and ask save: the stack summary's sums, the map's stamp and
+areas, a filed request's sections, and the one-line fields."""
 from __future__ import annotations
 
 import shutil
@@ -8,8 +8,8 @@ import unittest
 
 import support
 
-from council.commands import fingerprint, ledger as ledger_command, map_status
-from council.records import cells, ledger, map_file, request
+from council.commands import fingerprint, map_status
+from council.records import cells, map_file, request
 
 ASK = (b"# Ask\r\n## In your words\r\nfirst\r\n## Summary\r\nkept\r\n## Later, in your words\r\n\r\nlater one\r\n"
        b"## 2026-01-01 \xe2\x80\x94 review, run 2026-01-01-101010-council-review\r\nx\r\n"
@@ -107,21 +107,6 @@ class MapTest(support.Scratch):
         self.assertEqual((self.tmp / "map.md").read_bytes(),
                          b"# Map\r\nmap-commit: " + b"e" * 40 + b" (built)\r\n\r\n## Changes 2026-11-16\r\n"
                          b"- README.md: said (at " + b"e" * 12 + b")\r\n")
-
-
-class LedgerTest(support.Scratch):
-    def test_a_cell_that_is_not_a_number_adds_nothing(self) -> None:
-        rows = [["date", "run", "mode", "seat", "raised", "kept", "cut", "refuted", "tokens", "basis"],
-                ["d", "r1", "m", "hunt", "12abc", "1e3", "", "", "", ""],
-                ["d", "r1", "m", "beck", "x", "2", "", "", "", ""]]
-        lines = ledger_command.Table(rows, 10).lines()
-        self.assertEqual(lines[1].split(), ["hunt", "1", "0", "0", "0", "0", "-", "-", "1", "0"])  # judged, counted
-        self.assertFalse(any(line.startswith("raised counts every run") for line in lines))  # "x" is not above 0
-
-    def test_raw_rows_keep_the_header_and_every_line(self) -> None:
-        self.assertIsNone(ledger.raw_rows(self.tmp))
-        self.write("ledger.tsv", b"date\trun\tseat\r\n2026\tr1\thunt\r\n\r\nx\n", binary=True)
-        self.assertEqual(ledger.raw_rows(self.tmp), [["date", "run", "seat"], ["2026", "r1", "hunt"], [""], ["x"]])
 
 
 class RequestTest(support.Scratch):

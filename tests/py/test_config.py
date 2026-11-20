@@ -27,7 +27,7 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.gate_time_limit(home), (None, ""))
         self.assertFalse(config.notifications_off(home))
         self.assertIsNone(config.memory_line(home))
-        self.assertEqual(config.roster_table(home), [])
+        self.assertEqual(config.old_roster(home), [])
 
     def test_an_old_context_packs_line_changes_nothing(self) -> None:
         """Context packs were removed on 2026-11-15: a config that still says `context packs: on` reads as one
@@ -35,7 +35,7 @@ class ConfiguredTest(support.Scratch):
         prefs = "## Run preferences\n- agent cap: 6\n- build tier: full\n- seat models: on\n- sharing: just me\n"
         readers = (config.agent_cap, config.build_tier, config.checking,
                    sharing.sharing, config.gate_time_limit, config.notifications_off, config.memory_line,
-                   config.roster_table)
+                   config.old_roster)
         without = [reader(self.home(prefs)) for reader in readers]
         self.assertEqual([reader(self.home(prefs + "- context packs: on\n")) for reader in readers], without)
 
@@ -77,7 +77,7 @@ class ConfiguredTest(support.Scratch):
         """`- seat models:` is no longer read (D74): a config that says `on` reads as one without the line, and the
         line is a retired key, not a bad value."""
         prefs = "## Run preferences\n- agent cap: 6\n- build tier: full\n- sharing: just me\n"
-        readers = (config.agent_cap, config.build_tier, config.checking, sharing.sharing, config.roster_table,
+        readers = (config.agent_cap, config.build_tier, config.checking, sharing.sharing, config.old_roster,
                    config.problems)
         without = [reader(self.home(prefs)) for reader in readers]
         self.assertEqual([reader(self.home(prefs + "- seat models: on\n")) for reader in readers], without)
@@ -121,7 +121,7 @@ class OneLineReaderTest(support.Scratch):
             self.assertEqual(config.hard_rules(self.home(head + "\n- never write to prod\n## Notes\n")),
                              ["- never write to prod"], head)
         roster = "## ROSTER (twelve)\n| Seat | Slug |\n|---|---|\n| Docs | doc |\n"
-        self.assertEqual(config.roster_table(self.home(roster)), [("Docs", "doc", "", "")])
+        self.assertEqual(config.old_roster(self.home(roster)), [""])      # one seat row, no Reference column
 
     def test_a_value_it_cannot_read_is_named(self) -> None:
         home = self.home("# c\n## Run preferences\n- agent cap: three\n- build tier: heavy\n- sharing: everyone\n"
@@ -175,9 +175,8 @@ class StatusReadingTest(support.Scratch):
     def test_roster(self) -> None:
         table = ("| Seat | Slug | Lens |\n|---|---|---|\n| **Security** | `sec` | *auth* |\n| | x | y |\n"
                  "| Docs | doc | |\n")
-        self.assertEqual(config.roster_table(self.home("## Roster\n" + table)),
-                         [("Security", "sec", "auth", ""), ("Docs", "doc", "", "")])
-        self.assertEqual(config.roster_table(self.home("## Seats\n" + table)), [])     # only under ## Roster
+        self.assertEqual(config.old_roster(self.home("## Roster\n" + table)), ["", ""])   # two seat rows (D72)
+        self.assertEqual(config.old_roster(self.home("## Seats\n" + table)), [])     # only under ## Roster
 
 
 class EstimateTokensTest(unittest.TestCase):
@@ -197,14 +196,13 @@ class RosterRowsTest(support.Scratch):
                    "| **Martin Fowler** | `fowler` | Structure | references/refactoring.md | kept |\r\n"
                    "| No Slug |  | x |  | x |\r\n| <placeholder> | x | x | x | x |\r\n"
                    "| Café Seat | café | x | - | x |\r\n|  | ghost | x | x | x |\r\n## Gates\r\n| Gate | x |\r\n")
-        self.assertEqual(config.roster_table(self.tmp / ".council"),
-                         [("Martin Fowler", "fowler", "Structure", "references/refactoring.md"),
-                          ("No Slug", "", "x", ""), ("Caf\xc3\xa9 Seat", "caf\xc3\xa9", "x", "")])
+        self.assertEqual(config.old_roster(self.tmp / ".council"),      # each seat row's Reference cell, all that
+                         ["references/refactoring.md", "", ""])         # council doctor reads of a roster (D76)
 
     def test_no_roster_and_no_config(self) -> None:
-        self.assertEqual(config.roster_table(self.tmp / ".council"), [])
+        self.assertEqual(config.old_roster(self.tmp / ".council"), [])
         self.write(".council/council.config.md", "# c\n## Roster\nnone\n")
-        self.assertEqual(config.roster_table(self.tmp / ".council"), [])
+        self.assertEqual(config.old_roster(self.tmp / ".council"), [])
 
 
 if __name__ == "__main__":

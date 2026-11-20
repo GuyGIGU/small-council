@@ -38,7 +38,6 @@ Checks:
 - hook commands pointing at real scripts;
 - every `${CLAUDE_PLUGIN_ROOT}/…` and `references/…` path a skill names existing on disk;
 - the helper and hook scripts being bash with LF endings;
-- the ten stage doctrine files;
 - seat docs opening with the `# Title` that workers echo, and numbering principles "Principle N";
 - the helper, hook and scaffold scripts tracked in git as executable.
 
@@ -49,12 +48,11 @@ python evals/run_structural.py
 ```
 
 Checks:
-- the kernel's eleven laws and its stage index;
-- each stage's doctrine handing off to the next;
+- each mode's method being its one page, within its size, and the old seat system's pages staying gone;
 - every `council …` command a text mentions existing in the helper;
-- the modes' `## At <Stage>` sections and deliverable paths;
+- the modes' steps and deliverable paths;
 - the agents' contracts and the hooks' wiring;
-- the templates' schemas and the catalog;
+- the templates' schemas and the watch lists;
 - size budgets that keep skills whole after compaction;
 - bash 3.2 portability;
 - the rename;
@@ -83,15 +81,14 @@ Runs the helper against scaffolded git repos:
 - gates judged by exit code (optional vs mandatory), with commands passed intact; a project with
   nothing configured, or nothing that can run at a stage, reported as NOTHING WAS CHECKED and never
   as a pass; the verdict line's pass, FAIL and skipped counts;
-- seat-file collection: `ref:` proof of reading (paired seats too), item caps, broken citations,
-  empty or unreadable indexes, failed and re-dispatched workers;
+- seat files as `council check` and the seat-check hook read them: item caps, broken citations,
+  empty or unreadable indexes;
 - citation and origin checks: single lines, ranges and comma lists of both; introduced vs
   pre-existing;
 - gate side effects: what `--all` never runs;
-- the stack fingerprint, scoped memory and stale anchors (line lists too), earlier council work,
-  the seat ledger;
+- the stack fingerprint, scoped memory and stale anchors (line lists too), earlier council work;
 - the user's request: filing it word for word and out of git, redaction, continuing it, the quote
-  check; a war room's round-2 files; post-game runs without a council home;
+  check; post-game runs without a council home;
 - a build's proof: change checks fail before and pass after; explicit preservation checks pass on
   both versions with the same mode and command, missing or empty outputs refused; whether a
   test was left behind in the project, and the warning when a build log never says what it traded
@@ -208,11 +205,6 @@ runs — a review run's refuted claims and a build run's recorded gate failures,
 and rejected — with its refusals, injection and redaction cases. The larger helper suite also
 covers legacy memory formats and anchor checks.
 
-`python evals/run_seats.py` checks the seat record (`council ledger`, `records/ledger.py`) without a
-model: a split or round-2 worker counts as its seat, a seat no run judged shows `-`, shipped counts only
-the items a synthesis judged, and `council ledger advice`, removed in 1.2.0 (D44), is refused naming
-`council ledger`.
-
 ```bash
 python evals/check_repair_trace.py --self-test --case evals/suite/build-repair-drill
 python3 evals/check_repair_trace.py <trace.jsonl> --repo <kept case dir> --case evals/suite/build-repair-drill
@@ -227,16 +219,7 @@ fourth attempt after the stop, the drill rig untouched. With `--repo` it also re
 running git in the kept copy. `--self-test` runs it and the drill's graders on synthetic traces of a
 correct drill and each kind of violation.
 
-## 7. Phrase checks — advisory
-
-```bash
-python evals/run_phrases.py
-```
-
-Looks for the wording of the field-tested rules and warns if one is missing. It never fails: a
-reworded rule shouldn't break the build, and a phrase proves nothing about behaviour.
-
-## 8. Behavioural suite — runs Claude for real, so it costs tokens
+## 7. Behavioural suite — runs Claude for real, so it costs tokens
 
 `evals/suite/` holds cases for `claude plugin eval` (plugin.json → `experimental.evals`). Each case runs
 with and without the plugin, and the report shows what the plugin adds (Δ). Graders are the answer
@@ -279,8 +262,6 @@ python evals/record_eval.py                                                     
   `--allow-tools Bash Write`, and Claude Code runs granted Bash only inside its OS sandbox. Native
   Windows has none, so there every such run is refused. Run the whole suite under WSL2, on macOS, on
   Linux with `bubblewrap` and `socat` installed, or in CI.
-- **The war room's round 2** has no suite case: an eval run can't grant SendMessage, which resuming a
-  seat needs. Drill D18 covers it.
 - **Judgment-only runs:** use `--ablation none --runs 1 --tag judgment` to run the new cases without
   a plugin-versus-baseline comparison. The free helper suite validates their scaffolds; it does
   not establish that a live Chair or verifier will choose correctly. Drills D27-D28 cover further
@@ -300,8 +281,8 @@ python evals/record_eval.py                                                     
 - **Accounting, through the helper.** A token count is one plausible number stored whole. A repeated
   or resumed report counts once. A Workflow reports its agent count. Missing and older figures stay
   unknown. A correction is normalised, bounded, and keeps the original and its evidence.
-- **Two readers.** Eleven helper-written cases, plus a separate added-run check, read the same by the helper (close line,
-  ledger) and by the snapshot (widget, card), seat by seat and for the run.
+- **Two readers.** Eleven helper-written cases, plus a separate added-run check, read the same by the helper (close line)
+  and by the snapshot (widget, card), seat by seat and for the run.
 - **Status, from hand-made runs read at a fixed time.** Every state the widget shows (starting,
   running, waiting, failing, recovering, blocked, completed, paused, stopped, stale, unknown).
   Failing, recovering and blocked are also driven through `council gate` and `council repair`.
@@ -353,7 +334,7 @@ The helper, hook, memory and audit suites need bash and git. Without them they p
 `run_all.py` also fails a suite that reports no `N/N checks passed` line, or zero checks.
 `run_audit.py` checks both.
 
-## 9. Benchmark — Small Council against plain Claude Code
+## 8. Benchmark — Small Council against plain Claude Code
 
 ```bash
 python evals/bench.py self-test        # no model: every case unsolved when untouched, solvable, traps scored
@@ -369,7 +350,7 @@ A second pair, `compare --pair build`, sets two plugin builds side by side: a bu
 added by `python evals/bench.py arm chair`), with tokens by role read from the kept runs' own seats.
 A pilot is paid — see `evals/bench/README.md` for the protocol and the cost.
 
-## 10. Behavioral drills — run in Claude Code
+## 9. Behavioral drills — run in Claude Code
 
 See `behavioral-drills.md` (D1–D29; D29 also runs as the suite case `verifier-second-way`). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

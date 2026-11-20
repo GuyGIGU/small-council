@@ -64,8 +64,7 @@ Then **offer a post-game when the log shows one is worthwhile**
    or a task merged, split or skipped;
 4. the request moved: the request file gained words after the plan, or the user ruled on scope
    mid-build;
-5. it was big or long: 8 or more tasks, a war-room plan, or resumed after a compaction or in a new
-   session;
+5. it was big or long: 8 or more tasks, or resumed after a compaction or in a new session;
 6. it's the second fix pass on the same request.
 
 Never after a fix pass that met every finding with no follow-ups, when the user already declined one

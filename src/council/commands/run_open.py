@@ -15,12 +15,12 @@ from council.records import closing
 from council.records import home as where
 
 ASKED = closing.MODES                              # the modes that save the user's request first
-MODES = ASKED + ("council-init", "test-architect", "context-core")
+MODES = ASKED + ("council-init", "test-architect")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv",
          "council-implement": "run-plan-implement.tsv", "council-plan": "run-plan-design.tsv",
          "council-research": "run-plan-design.tsv", "council-health": "run-plan-health.tsv",
-         "council-postgame": "run-plan-postgame.tsv", "test-architect": "run-plan-audit.tsv"}   # else run-plan.tsv
+         "council-postgame": "run-plan-postgame.tsv", "test-architect": "run-plan-audit.tsv"}   # every mode's
 BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md",   # the pair's role texts (D48)
           "council-plan": "design-brief.md", "council-research": "design-brief.md",     # the designer's (D60)
           "council-health": "review-brief.md", "council-postgame": "review-brief.md",   # the pair's again (D65, D71)
@@ -118,7 +118,7 @@ def _code_root(given: str) -> str:
 
 def _folder(home: str, mode: str, top: str, session: str) -> str:
     """<home>/runs/<local time>-<short mode>[-n] with seats/, gates/ and the run's first files."""
-    short = "core" if mode == "context-core" else mode[len("council-"):] if mode.startswith("council-") else mode
+    short = mode[len("council-"):] if mode.startswith("council-") else mode
     base = "%s/runs/%s-%s" % (home, time.strftime("%Y-%m-%d-%H%M%S"), short)
     run, n = base, 2
     while os.path.exists(where.native(run)):
@@ -132,7 +132,7 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
     except OSError:
         raise cli.Refusal("cannot write in " + run) from None
     init = mode == "council-init"
-    template = TEMPLATES / PLANS.get(mode, plan_file.NAME)
+    template = TEMPLATES / PLANS[mode]
     brief = TEMPLATES / BRIEFS[mode] if mode in BRIEFS else None
     for need, what in ((template, "run plan"), (brief, "brief")):
         if need is not None and not need.is_file():

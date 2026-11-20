@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from council.views import snapshot, status, status_closing, status_usage, words  # noqa: E402
 sys.path.insert(0, str(ROOT / "src"))
 from council.commands import seat_notes  # noqa: E402  (the helper's own code, where bash once was sourced)
-from council.records import ledger as helper_ledger, state as helper_state, usage as helper_usage  # noqa: E402
+from council.records import state as helper_state, usage as helper_usage  # noqa: E402
 from council.records import seats as helper_seats  # noqa: E402
 
 checks = []
@@ -80,7 +80,7 @@ def fingerprint(folder):
 
 
 def readers(repo, run):
-    """The helper's reading (records.usage, which the close line and the ledger use) and the snapshot's of one
+    """The helper's reading (records.usage, which the close line uses) and the snapshot's of one
     run: per seat (basis, agent runs, trusted tokens) and for the run (basis, agent runs, tokens)."""
     def seen(seats, totals):
         per_seat = {x["slug"]: (x["tokens_basis"], x["agents"] if x["agents"] is not None else x["agents_at_least"],
@@ -188,7 +188,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     plain, card = status.text(r), status.widget(r)
     check("status: a failing check is said once — the label, then the stage; the attention line names the check "
           "(a real run read 'A check is failing. A check failed.')",
-          plain.splitlines()[1] == "Status: A check is failing. Stage: Experts at work (stage 5 of 10)."
+          plain.splitlines()[1] == "Status: A check is failing. Stage: Agents at work (stage 3 of 7)."
           and "Needs you: Check lint failed" in plain and "A check failed" not in plain + card
           and card.count("A check is failing") == 2       # the screen-reader line and the badge, nothing under it
           and re.search(r'<h2 class="sr">[^<]*: A check is failing\. Seats:', card) is not None
@@ -213,7 +213,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("next: the step written at run open shows while the run is still at convene",
           views["open"][0] == snapshot.NEXT_AT_OPEN and all("Next:" in v for v in views["open"][1:3]), views["open"][:2])
     check("next: past convene that open-time step is never shown — not in the data, the summary or the card "
-          "(a real run read 'Next: size the run…' at stage 10 of 10)",
+          "(a real run read 'Next: size the run…' at its last stage)",
           views["late"][0] == "" and views["late"][3] == ""
           and not any("Next:" in v or "size the run" in v for v in views["late"][1:3]), views["late"][:2])
     check("next: a step the Chair recorded still shows past convene",
@@ -777,8 +777,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         stepping.mkdir()
         subprocess.run([GIT, "init", "-q"], cwd=stepping, check=True)
         write(stepping / ".council" / "council.config.md", "# Council config\n")
-        srun = Path(council(stepping, "run", "open", "context-core")[1].strip())  # the old engine's stages: its
-        #                                             doctrine named (every council mode is its own page since D71)
+        srun = Path(council(stepping, "run", "open", "council-plan")[1].strip())
         at_open_line = "\nnext: {}\n".format(snapshot.NEXT_AT_OPEN)
         opened = read(srun / "session-state.md")
         council(stepping, "state", "size=solo")
@@ -790,15 +789,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "while it is at convene",
               at_open_line in opened and at_open_line in sized and "Next: " + snapshot.NEXT_AT_OPEN in shown_at_convene,
               opened + shown_at_convene)
-        check("next: leaving convene replaces that step with Prepare's own, naming its doctrine file",
-              "\nnext: Prepare" in moved and "02-prepare.md" in moved and "size the run" not in moved
+        check("next: leaving convene replaces that step with Prepare's own, naming its section of the mode's page",
+              "\nnext: Prepare" in moved and "(council-plan, section 2)" in moved and "size the run" not in moved
               and "\nphase: prepare\n" in moved and "Next: Prepare" in council(stepping, "status")[1], moved)
         council(stepping, "state", "next=read the diff first")
         mine = read(srun / "session-state.md")
-        council(stepping, "state", "phase=assign")
+        council(stepping, "state", "phase=work")
         check("next: a step the Chair recorded shows until the stage changes, and the new stage records its own",
-              "\nnext: read the diff first\n" in mine and "03-assign.md" in read(srun / "session-state.md")
-              and "Next: Assign" in council(stepping, "status")[1], read(srun / "session-state.md"))
+              "\nnext: read the diff first\n" in mine and "(council-plan, section 3)" in read(srun / "session-state.md")
+              and "Next: Work" in council(stepping, "status")[1], read(srun / "session-state.md"))
         write(srun / "session-state.md", re.sub(r"\nnext: [^\n]*\n", "\nnext: " + snapshot.NEXT_AT_OPEN + "\n",
                                                 read(srun / "session-state.md"), count=1))   # as a run an older helper moved on
         stale_text = council(stepping, "status")[1]
@@ -942,10 +941,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         state = read(run / "session-state.md")
         check("close: the cost line is a total only when every agent run's usage is known — here, with the correction, it is",
               "actual: ~4.8M tokens across 41 agent run(s)" in state, re.findall(r"^actual:.*$", state, re.MULTILINE))
-        ledger = read(repo / ".council" / "ledger.tsv")
-        check("ledger: rows carry checked figures (accounting 2), and the verifiers row stays even with an unknown cost",
-              ledger.startswith("date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\taccounting\n")
-              and "\thunt\t" in ledger and "\t110000\t2" in ledger and "\tleach\t" in ledger and "\t41234\t2" in ledger, ledger)
+        check("close: no seat record is written — no ledger.tsv (D76)", not (repo / ".council" / "ledger.tsv").exists())
 
         # A run from before this accounting, carried on by the new helper
         code, out, err = council(repo, "run", "open", "council-review", "--alongside")
@@ -1050,7 +1046,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
                 continue
             if bash_seats != py_seats or bash_run != py_run:
                 mismatch.append((name, bash_seats, py_seats, bash_run, py_run))
-        check("readers: the helper (close line, ledger) and the snapshot (widget, card) read every basis the same — "
+        check("readers: the helper (close line) and the snapshot (widget, card) read every basis the same — "
               "per seat and for the run (found in review: a finished seat with no agent split them)",
               not mismatch and len(cases) == 11, mismatch)
         expect = {"complete": "complete", "no-agent seat": "partial", "declared no agent": "complete", "missing usage": "partial",
@@ -1062,11 +1058,6 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "unknown (partial), never a zero; agents=0 or a corrected 0 is a real 0; an agents-only correction is partial "
               "(the ruling); 160 and 13 digits are suspect",
               got == expect, got)
-        helper_ledger.record(run_e)
-        ledger = [row.split("\t") for row in read(helper_ledger.path(agree / ".council")).splitlines()
-                  if row.split("\t")[1:2] == [run_e.name]]
-        check("ledger: a seat every reader calls partial gets no price",
-              [(row[3], row[8]) for row in ledger] == [("wf", "-")], ledger)
         try:
             status.interpret(snapshot.snapshot(run_h, None, 8), NOW)
             crashed = False

@@ -152,7 +152,7 @@ def plan(run: Path, mode: str, size: str, seats: dict, tokens: int) -> None:
 
 
 def review(chair: Chair) -> Path:
-    """A squad review run through its ten stages: two workers, one verifier, a finding confirmed and delivered."""
+    """A squad review run through its stages: two workers, one verifier, a finding confirmed and delivered."""
     chair.prompt("/council-review the change on this branch")
     chair.council("run", "status")
     chair.say("Squad review: Hunt and Tests, then one blind verifier — est. ~250k tokens. Going ahead.")
@@ -165,8 +165,7 @@ def review(chair: Chair) -> Path:
     chair.council("state", "size=squad — 2 seats + 1 verifier, est. ~250k tokens")
     chair.council("state", "phase=prepare")
     chair.council("gate", "tests", "--", "true")
-    for phase in ("assign", "brief", "work"):
-        chair.council("state", "phase=" + phase)
+    chair.council("state", "phase=work")
     chair.dispatch(WORKER, "hunt", "a1b2c3d4e5f6a7b8c", run)
     chair.card()
     chair.dispatch(WORKER, "tests", "a2b3c4d5e6f7a8b9c", run)
@@ -174,8 +173,7 @@ def review(chair: Chair) -> Path:
     chair.council("seat", "hunt", "done", "tokens=58211")
     write(run / "seats" / "tests.md", "# Tests\nref: tests\n## Index\n")
     chair.council("seat", "tests", "done", "tokens=41377")
-    for phase in ("collect", "judge"):
-        chair.council("state", "phase=" + phase)
+    chair.council("state", "phase=judge")
     write(run / "synthesis.md", "# Synthesis\n## Kept\n"
           "1 · P1 · Principle 1 · app.py:2 · Expiry skipped · state: OBSERVED · from: hunt#1\n")
     chair.council("state", "phase=challenge")

@@ -216,7 +216,7 @@ def transcript_run1(path, project, run):
     log.at(utc("2026-09-30T10:39:19Z")).bash(
         use + "$C state phase=deliver | tail -1; $C state phase=learn | tail -1; $C status 2>&1 | tail -12",
         "state: phase learn · in-progress · %s\nProject · Review · %s\n"
-        "Status: A check is failing. Stage: Recording lessons (stage 10 of 10).\nSpend: spent 94k of estimated 120k" % (RUN1, RUN1))
+        "Status: A check is failing. Stage: Recording lessons (stage 7 of 7).\nSpend: spent 94k of estimated 120k" % (RUN1, RUN1))
     log.text("The gates are recorded; spent 94k of an estimated 120k.")
     log.at(utc("2026-09-30T10:39:37Z")).bash(
         use + "$C run close --status complete 2>&1 | tail -4; $C status 2>&1 | sed -n '1,9p'",
@@ -276,12 +276,10 @@ def build_clean(base):
     step("state", "size=" + SIZE)
     step("state", "phase=prepare")
     step("gate", "tests", "--", "true")
-    for phase in ("assign", "brief", "work"):
-        step("state", "phase=" + phase)
+    step("state", "phase=work")
     step("seat", "hunt", "running", "agent=a1b2c3d4e5f6a7b8c")
     step("seat", "hunt", "done", "tokens=58000")
     write(run / "seats" / "hunt.md", "# Hunt\n## Index\n1 · P1 · Principle 1 · src/auth.py:4 · Expiry skipped\n")
-    step("state", "phase=collect")
     step("state", "phase=judge")
     write(run / "synthesis.md", "# Synthesis\n## Kept\n"
           "1 · P1 · Principle 1 · src/auth.py:4 · Expiry skipped · state: OBSERVED · from: hunt#1\n")
@@ -554,8 +552,8 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("clean run: every item passes and the audit exits 0 (a subagent's call in the file is not the Chair's)",
           code == 0 and len(listed) >= 14
           and all(v == "pass" for v, _ in listed), out + err)
-    check("clean run: the ten stages, the widget at the first dispatch, the relayed status after close",
-          "convene > prepare > assign > brief > work > collect > judge > challenge > deliver > learn"
+    check("clean run: the seven stages, the widget at the first dispatch, the relayed status after close",
+          "convene > prepare > work > judge > challenge > deliver > learn"
           in item(out, "Stages")[1] and item(out, "Closing card")[0] == "pass"
           and item(out, "Status card at the first dispatch")[0] == "pass", out)
     check("clean run: a refusal tried again, the Chair's own seat on record",
@@ -700,7 +698,7 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     code, out, err = council(base, "run", "audit", "--run", str(miscited), "--transcript", str(log1))
     check("a cut claim a verifier found MISCITED (true, elsewhere) fails the claim index like a CONFIRMED one, as council evidence check reads it",
           item(out, "Claim index")[0] == "FAIL" and "C1" in item(out, "Claim index")[1], item(out, "Claim index")[1])
-    # An agent seat with no token figure (issue 54): the run total and the ledger both leave it out.
+    # An agent seat with no token figure (issue 54): the run total leaves it out.
     # The one per-seat rule (records/usage.py) decides; the audit only says which seats and why.
     head = "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
 
@@ -713,7 +711,7 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     verdict, words = figures("fig-no-report", "verify-1\tdone\ta4c08e8e07813e7ee\t\t2026-09-30 13:23\t\t1\t0\n")
     check("Token figures: an agent run that finished with no usage report FAILs, naming the seat, its agent and the fix",
           verdict == "FAIL" and "verify-1 (agent a4c08e8e07 finished with no usage report)" in words
-          and "council correct <seat> tokens=<exact>" in words and "leave them out" in words, words)
+          and "council correct <seat> tokens=<exact>" in words and "leaves them out" in words, words)
     verdict, words = figures("fig-no-id", "verify-1\tdone\t\t\t2026-09-30 13:23\t\t\t0\n")
     check("Token figures: a seat with no agent on record FAILs and says no agent id was recorded",
           verdict == "FAIL" and "verify-1 (no agent id recorded" in words, words)
@@ -725,7 +723,7 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("Token figures: the Chair's own seat is not an agent run, so no figure is owed", verdict == "pass", words)
     verdict, words = figures("fig-declared", "verify-1\tdone\t\t\t2026-09-30 13:23\t\t0\t0\n")
     check("Token figures: a seat declared agents=0 (the Chair did the work) is no gap", verdict == "pass", words)
-    # Corrected from evidence, a figure is a figure (council correct), as the ledger and the status card read it.
+    # Corrected from evidence, a figure is a figure (council correct), as the status card reads it.
     fixed = run1_copy("fig-corrected")
     write(fixed / "seats.tsv", head + "verify-1\tdone\ta4c08e8e07813e7ee\t\t2026-09-30 13:23\t\t1\t0\n")
     write(fixed / "corrections.jsonl", json.dumps({"seat": "verify-1", "field": "tokens", "to": 94152, "from": "",

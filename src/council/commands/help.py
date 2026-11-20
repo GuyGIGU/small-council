@@ -5,7 +5,7 @@ import sys
 
 from council.commands import cli
 
-COUNCIL_VERSION = "2.0.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
+COUNCIL_VERSION = "2.1.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
 
 USAGE = """\
 council — the Small Council's helper (Python 3.8+ and git)
@@ -112,8 +112,6 @@ council — the Small Council's helper (Python 3.8+ and git)
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none);
                                          inside a gate, since the run's recorded base
-  council collect                        check every seat file: the brief's, a war room's debate.md's, and
-                                         any other .md in seats/ (a Workflow's agents skip the seat hook)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md); in a build, each
                                          proof (an ok change proof with saved rounds is rerun with them taken
                                          off, and must fail) and the receipt's Checked by machine and Not
@@ -163,9 +161,6 @@ council — the Small Council's helper (Python 3.8+ and git)
   council prior [path …]                 earlier council work on these paths (default: the index)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state
-  council ledger [N]                     each seat's record over the last N completed runs (default 10),
-                                         with the roster bar's facts: judged runs, and items counted
-                                         at most 5 from any one run; it weighs nothing
   council status [--widget [--preview] | --json | --line]
                                          the run in plain words: what is happening, whether it moves,
                                          what needs the user, where the evidence is; --widget prints

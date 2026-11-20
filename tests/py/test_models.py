@@ -41,7 +41,9 @@ class ReadTest(support.Scratch):
                                   "haiku" % WHERE),
                 ("builder=claude-opus-4-1", "%s: 'claude-opus-4-1' is not a model for builder — use inherit, fable, "
                                             "opus, sonnet or haiku" % WHERE),
-                ("lead=opus", "%s: 'lead' is not a role — use builder, review or verifier" % WHERE),
+                ("lead=opus", "%s: 'lead' is not a role — use builder, review, verifier or map" % WHERE),
+                ("map=opus", "%s: 'opus' is not a model for map — a mapping worker takes inherit, sonnet or haiku"
+                             % WHERE),
                 ("opus", "%s: 'opus' is not role=model — write builder=, review= or verifier= with a model" % WHERE),
                 ("builder=opus, builder=sonnet", "%s names builder twice — keep one" % WHERE)):
             found = models.models(self.home("- models: %s\n" % line))

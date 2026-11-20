@@ -12,7 +12,7 @@ import os
 from typing import NamedTuple
 
 from council.commands import cli
-from council.records import bytewise, config, memory, memory_audit, scope
+from council.records import bytewise, memory, memory_audit, scope
 from council.records import home as where
 from council.records.bytewise import DOT
 from council.records.memory_entries import cells
@@ -104,11 +104,6 @@ def load() -> Memory:
     return Memory(home, top, mem, entries, audit, memory.served(entries, audit) if audit else entries)
 
 
-def slugs(home: str) -> list[str]:
-    """The roster's slugs (C-locale text), as the scope matcher compares them."""
-    return [row.slug for row in config.roster_table(where.native(home)) if row.slug not in ("", "-")]
-
-
 def indexed(found: Memory) -> list[str]:
     """What council memory (index) says: every entry and whether a brief gets it, the scope items that match
     nothing, and what of the file goes unread (doctor counts the same lines)."""
@@ -116,7 +111,7 @@ def indexed(found: Memory) -> list[str]:
         return ["memory: no entries yet in %s" % found.mem] + memory.unread(found.mem)
     from council.commands import memory_tree
     return ([bytewise.shown(line) for line in index_lines(found.served)]
-            + memory_tree.Tree(where.this_tree()).orphans(found.entries, slugs(found.home)) + memory.unread(found.mem))
+            + memory_tree.Tree(where.this_tree()).orphans(found.entries) + memory.unread(found.mem))
 
 
 def index_lines(served: list[str]) -> list[str]:

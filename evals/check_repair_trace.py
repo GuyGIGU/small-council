@@ -340,7 +340,7 @@ ALREADY = "repair: this gate run is already recorded — council gate records a 
 
 def correct():
     """The drill as 0.19 runs it: `council gate tests` records each failed attempt itself and prints the record."""
-    return ([dict(name="Skill", input={"skill": "small-council:context-core"}),
+    return ([dict(name="Skill", input={"skill": "small-council:council-implement"}),
              bash(C + " gate --all", "gate tests: pass (exit 0, 0s)\ngates: 1 ran — all pass"),
              write("/x/cwd/tests/test_format.py"),
              bash(C + " gate before-1 -- 'python3 -m unittest tests.test_format'", "gate before-1: FAIL (exit 1, 0s)"),
@@ -357,7 +357,7 @@ def correct():
 
 def typed():
     """The drill as 0.18 ran it: each failed gate run followed by a typed `council repair record`."""
-    return ([dict(name="Skill", input={"skill": "small-council:context-core"}),
+    return ([dict(name="Skill", input={"skill": "small-council:council-implement"}),
              bash(C + " gate --all", "gate tests: pass (exit 0, 0s)\ngates: 1 ran — all pass"),
              write("/x/cwd/tests/test_format.py"),
              bash(C + " gate before-1 -- 'python3 -m unittest tests.test_format'", "gate before-1: FAIL (exit 1, 0s)"),

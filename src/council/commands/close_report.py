@@ -42,24 +42,22 @@ def audit(run: Path) -> None:
 
 
 def chair(run: Path) -> None:
-    """The Chair's own tokens from the session transcript, and beside them the method its mode loads through the
-    stages the run enters (D13), as a run.chair_usage event and one line; else nothing."""
+    """The Chair's own tokens from the session transcript, and beside them the method its mode loads (its one page),
+    as a run.chair_usage event and one line; else nothing."""
     code, out, _ = script.captured("chair_usage", ["--run", run.as_posix()])
     said = re.fullmatch("tokens=([0-9]+);calls=([0-9]+);basis=(complete|partial)", out.rstrip("\n"))
     if code or not said:
         return
     tokens, calls, basis = said.groups()
-    mode, entered = resolve.field(run, "mode"), stages.required(run)
-    method = stages.method_bytes(mode, entered)
+    mode = resolve.field(run, "mode")
+    method = stages.method_bytes(mode)
     try:
         events.append(run, "run.chair_usage", "chair", tokens,
                       "calls=%s;basis=%s;method_bytes=%d" % (calls, basis, method))
     except events.EventError as failure:
         cli.warn("council: %s" % failure)
         return
-    doctrine = sum(name.startswith("references/doctrine/") for name in stages.method_files(mode, entered))
-    loaded = ("%s's one page" % mode if mode in stages.ONE_PAGE else      # a review's method is its page (D47)
-              "context-core, %s and the doctrine of the %d stage%s it enters" % (mode, doctrine, "s" * (doctrine != 1)))
+    loaded = "%s's one page" % mode                      # every mode's method is its page (D47, D76)
     cli.say("the Chair's own work: %s%s tokens over %s model call%s (its context's growth, from the session "
             "transcript; not in the agents' figures) · method load: %s bytes (%s)"
             % ("at least " * (basis == "partial"), usage.token_text(int(tokens)), calls, "s" * (calls != "1"),

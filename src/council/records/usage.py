@@ -19,7 +19,7 @@ Seat = Dict[str, Any]   # one seat's row and its figures, as seat_list builds it
 def seat_usage(row: Seat, tokens_cell: str | None, agents_cell: str | None, reported: int | None,
                fixes: dict[tuple[str, str], dict[str, Any]]) -> dict[str, Any]:
     """One seat's agent runs and tokens, each with how far the record supports it — kept identical to
-    the helper's seat_rows (bin/council), which states the close line and the ledger. Bases: reported,
+    the helper's seat_rows (bin/council), which states the close line. Bases: reported,
     corrected, pending (still working), partial or missing (a finished run's usage is unknown),
     unrecorded (no agent on record: unknown, never zero), no-agent (declared with agents=0, or corrected
     so), suspect (a count no agent run can have), legacy (a row from before the accounting columns)."""
