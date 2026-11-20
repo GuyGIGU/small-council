@@ -10,8 +10,8 @@ from council.commands.doctor import Doctor
 from council.records import book, paths
 from council.records import home as where
 
-REFRESH = "run a council-init refresh: it adopts the project's own design, stack and decisions files or writes the " \
-          "pages, and names each under ## Book (references/run/book.md)"
+REFRESH = ("run a council-init refresh: it adopts the project's own design, stack and decisions files or writes the "
+           "pages, and names each under ## Book (references/run/book.md)")
 WHY = {"design": "the project's parts, who owns each folder and the one way each job is done",
        "stack": "what the project is built with and why, so nothing tells a builder that a new library is the "
                 "owner's decision (D54)"}
