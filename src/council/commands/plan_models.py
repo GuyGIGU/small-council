@@ -1,6 +1,7 @@
 """The run plan check's model rules (references/run/run-plan.md, D37): which seat may ask for which model, and
 a verifier never on a weaker model than the builder it checks. plan_check.Check calls `judge` once every row
-is read; the seat-models overrides (D30's mapping and survey rule) are judged here as they always were."""
+is read. `- seat models:` is no longer read (D74): a seat's own sonnet or haiku is refused in an open run, and a closed
+run's is judged by the mapping and survey rule of its day."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -11,7 +12,7 @@ if TYPE_CHECKING:                                   # plan_check imports this mo
     from council.commands.plan_check import Check
 
 BUILD = "council-implement"
-ROUTED = ("mapping", "survey")                      # the purposes `- seat models: on` may route
+ROUTED = ("mapping", "survey")                      # the purposes `- seat models: on` routed, until D74
 LEGACY = ("sonnet", "haiku")                        # the only names `- seat models:` ever routed
 PAIR = ("reader", "runner")                         # the two fixed seats that end a build, as they make a review
 
@@ -20,7 +21,7 @@ def role_of(check: Check, ident: str) -> str:
     """The `- models:` role a seat's agent plays: a build's workers are builders (its reader and runner none), a
     review's workers are review seats, a verifier is a verifier; '' for the Chair, a diagnosis seat and other modes'
     workers.
-    A mapping or survey worker stays under `- seat models:` alone."""
+    A mapping or survey worker has no role: it runs on the session's model (D74)."""
     role = check.role.get(ident, "")
     if role == "verifier":
         return "verifier"
@@ -69,15 +70,18 @@ def verifiers(check: Check) -> None:
 
 
 def seat_model(check: Check, ident: str, model: str, role: str, found: models.Models, line: int) -> None:
-    """A named model that isn't its role's configured one: the Chair stays on the session's model; sonnet and
-    haiku fall to the seat-models rules as before; fable and opus need `- models:`."""
+    """A named model that isn't its role's configured one: the Chair stays on the session's model; a seat's own
+    sonnet or haiku is refused, since `- seat models:` is no longer read (D74; a closed run's by the purpose rule of
+    its day); fable and opus need `- models:`."""
     seat_role = check.role.get(ident, "")
     if model in LEGACY or model not in models.NAMES:   # an unknown name: refused by its row, judged as before
         if seat_role != "worker":
             check.problem(line, "only worker seats can use sonnet or haiku; %s has role %s" % (ident, seat_role))
-        if check.given.seat_models == "off":
-            check.problem(line, "seat model overrides are off; enable seat models: on in council.config.md")
-        if check.purpose.get(ident, "") not in ROUTED:
+        if check.given.seat_models != "closed":
+            check.problem(line, "`- seat models:` is no longer read, so %s can't take %s as a seat's own choice — "
+                                "make seat/%s/model inherit (a build's builder and a verifier take theirs from "
+                                "council.config.md's - models: line)" % (ident, model, ident))
+        elif check.purpose.get(ident, "") not in ROUTED:
             check.problem(line, "sonnet or haiku needs seat/%s/purpose = mapping or survey" % ident)
     elif seat_role == "chair":
         check.problem(line, "the Chair stays on the session's model — make seat/%s/model inherit" % ident)

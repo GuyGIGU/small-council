@@ -2,7 +2,8 @@
 references/run/book.md).
 
 council book prints where the book's four pages are (the design page, the stack page, the decisions log and known
-problems), each with whether it is there yet; every agent reads the first three before anything else. council book
+problems), each with whether it is there yet, then the watch lists the stack page's rows name, each with its path
+(D73); every agent reads the first three pages before anything else. council book
 note adds a dated line under known problems' `## Found, not fixed`: a true thing found and not fixed, such as a
 review's item below the worth bar. council book waive adds one under `## Not to raise again`: a kind of item the owner
 waved off, in their words. A review raises neither again. The same words twice are written once; the line is redacted
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import cli
-from council.records import book, config, paths, redact
+from council.records import book, config, paths, redact, watch_lists
 from council.records import home as where
 
 USAGE = ('usage: council book | book note "<what is wrong — path:line>" | book waive "<the kind of item, in the '
@@ -55,9 +56,19 @@ def described(page: book.Page) -> str:
 
 def lines(home: str) -> list[str]:
     """council book's output: a line per page, then who reads which."""
-    return [described(page) for page in book.pages(home)] + [
+    return [described(page) for page in book.pages(home)] + watch(home) + [
         "Read first: %s — every agent, before anything else; a review also reads known problems and raises nothing "
         "listed there again" % ", ".join(book.READ_FIRST)]
+
+
+def watch(home: str) -> list[str]:
+    """The watch lists the stack page names, a line per part: each list with the path an agent opens, as a brief's
+    `watch lists:` line takes it (two at most for one agent); one line saying so when the page names none."""
+    found = ["watch lists: %s — %s" % (row.part or "(a row with no name)", ", ".join(
+        "%s (%s)" % (name, path if there else path + ", not found") for name, path, there in row.lists))
+        for row in watch_lists.rows(home)]
+    return found or ["watch lists: none named on the stack page (references/watch-lists.md lists them; a brief's "
+                     "`watch lists:` line is then none)"]
 
 
 def read_first(home: str) -> list[str]:

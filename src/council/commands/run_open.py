@@ -20,16 +20,19 @@ TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv",
          "council-implement": "run-plan-implement.tsv", "council-plan": "run-plan-design.tsv",
          "council-research": "run-plan-design.tsv", "council-health": "run-plan-health.tsv",
-         "council-postgame": "run-plan-postgame.tsv"}                                   # else run-plan.tsv
+         "council-postgame": "run-plan-postgame.tsv", "test-architect": "run-plan-audit.tsv"}   # else run-plan.tsv
 BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md",   # the pair's role texts (D48)
           "council-plan": "design-brief.md", "council-research": "design-brief.md",     # the designer's (D60)
-          "council-health": "review-brief.md", "council-postgame": "review-brief.md"}   # the pair's again (D65, D71)
+          "council-health": "review-brief.md", "council-postgame": "review-brief.md",   # the pair's again (D65, D71)
+          "test-architect": "review-brief.md"}                                          # and a test audit's (D75)
 LINES = {"council-implement": "build-brief.md",   # what a build's brief adds to the review's (D56), a health
-         "council-health": "health-brief.md",     # pass's (D65) and a post-game's (D71), each block on its
-         "council-postgame": "postgame-brief.md"}  # {{NAME}} line
-BLOCKS = ("BUILD", "BUILD_RUNNER", "HEALTH", "POSTGAME")
+         "council-health": "health-brief.md",     # pass's (D65), a post-game's (D71) and a test audit's (D75),
+         "council-postgame": "postgame-brief.md",  # each block on its {{NAME}} line
+         "test-architect": "audit-brief.md"}
+BLOCKS = ("BUILD", "BUILD_RUNNER", "HEALTH", "POSTGAME", "AUDIT", "AUDIT_READERS")
 LOOP = "council"   # /council: no run of its own (D64)
-INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
+INIT_NEXT = ("follow council-init: detect the stack and ask each part's reason, propose its watch lists, dry-run the "
+             "gates, map, then propose")
 STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead
 
 
@@ -152,8 +155,8 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
 
 def brief_lines(mode: str) -> dict[str, str]:
     """The blocks a mode's lines template adds to the review's brief, by name ([BUILD], [BUILD_RUNNER] for a build,
-    [HEALTH] for a health pass, [POSTGAME] for a post-game); a block the mode's file lacks is empty, and a brief has
-    an empty one's line taken out (a review's, all four)."""
+    [HEALTH] for a health pass, [POSTGAME] for a post-game, [AUDIT], [AUDIT_READERS] for a test audit); a block the
+    mode's file lacks is empty, and a brief has an empty one's line taken out (a review's, all of them)."""
     blocks = dict.fromkeys(BLOCKS, "")
     if mode not in LINES:
         return blocks

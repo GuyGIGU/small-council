@@ -28,7 +28,8 @@ Carmack × Beck principles every finding and specification cites. Output formats
 that writes it.
 
 **Where output goes.** With a council home: audit reports → `<home>/reviews/<YYYY-MM-DD>-test-audit-<slug>.md`,
-scratch such as the surface map → `<home>/runs/<TS>-test-audit/`. Without one: `.test-architect/`.
+scratch such as the surface map → `<home>/runs/<TS>-test-audit/` (a large audit's run folder, once
+it is open). Without one: `.test-architect/`.
 Test specifications always go to `specs/<feature>-tests.md`, next to the feature spec. On a just-me
 council (`- sharing: just me` in the config), that is `<home>/specs/`, where spec-writer saves
 there too.
@@ -88,9 +89,14 @@ to evaluate existing test quality.
 
 **Scope:** ask what to audit if it isn't specified — specific test files, specific source modules
 ("audit tests for the analysis pipeline"), or a full sweep. **A large scope** (more than ~25 test
-files) → offer to run the audit on the council pipeline: invoke `context-core`, partition the test
-files across Beck seats (`small-council:council-worker` with `quality-testing.md`, this mode's P1–P3
-checks as the per-item format), then aggregate and verify. A small scope → do it inline.
+files) → offer to run it on the pair (D75), and on the owner's go: map the surface (Phase 1),
+`council run open test-architect`, then fill `brief.md`'s `<…>` lines — each reader's share of the
+test files, every file in one share, and the five riskiest source files for the runner. Up to three
+readers (uncomment `reader-2`, `reader-3` in `run-plan.tsv` past ~60 and ~120 test files; `council
+run plan check`), all `small-council:council-worker`, and one runner, in one message, each told its
+brief block and recorded with `council seat`. Check each P1 against the test and the code yourself,
+then write the report (Phase 3) from their files. No `context-core`, no stage doctrine. A small
+scope → do it inline.
 
 ### Phase 1: Map the surface
 

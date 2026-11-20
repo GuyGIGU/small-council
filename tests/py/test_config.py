@@ -23,7 +23,6 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.agent_cap(None), 10)
         self.assertEqual(config.build_tier(home), "light (default)")
         self.assertEqual(config.checking(home), "one per batch (default)")
-        self.assertEqual(config.seat_models(home), "off")
         self.assertEqual(sharing.sharing(home), "team")
         self.assertEqual(config.gate_time_limit(home), (None, ""))
         self.assertFalse(config.notifications_off(home))
@@ -34,7 +33,7 @@ class ConfiguredTest(support.Scratch):
         """Context packs were removed on 2026-11-15: a config that still says `context packs: on` reads as one
         without the line."""
         prefs = "## Run preferences\n- agent cap: 6\n- build tier: full\n- seat models: on\n- sharing: just me\n"
-        readers = (config.agent_cap, config.build_tier, config.checking, config.seat_models,
+        readers = (config.agent_cap, config.build_tier, config.checking,
                    sharing.sharing, config.gate_time_limit, config.notifications_off, config.memory_line,
                    config.roster_table)
         without = [reader(self.home(prefs)) for reader in readers]
@@ -74,11 +73,18 @@ class ConfiguredTest(support.Scratch):
         for figure in ("500", "2M", "1,50k"):
             self.assertEqual(unread("- estimate per worker: {}\n".format(figure)), [figure], figure)
 
-    def test_seat_models_and_sharing(self) -> None:
-        self.assertEqual(config.seat_models(self.home("- seat models: on\r\n")), "on")
-        self.assertEqual(config.seat_models(self.home("- seat models: on # yes\n")), "on")
-        self.assertEqual(config.seat_models(self.home("- seat models: On\n")), "on")
-        self.assertEqual(config.seat_models(self.home("- seat models: yes\n")), "off")
+    def test_an_old_seat_models_line_changes_nothing(self) -> None:
+        """`- seat models:` is no longer read (D74): a config that says `on` reads as one without the line, and the
+        line is a retired key, not a bad value."""
+        prefs = "## Run preferences\n- agent cap: 6\n- build tier: full\n- sharing: just me\n"
+        readers = (config.agent_cap, config.build_tier, config.checking, sharing.sharing, config.roster_table,
+                   config.problems)
+        without = [reader(self.home(prefs)) for reader in readers]
+        self.assertEqual([reader(self.home(prefs + "- seat models: on\n")) for reader in readers], without)
+        self.assertIn("seat models", config.RETIRED)
+        self.assertFalse(hasattr(config, "seat_models"))
+
+    def test_sharing(self) -> None:
         for line, want in (("Just Me", "just me"), ("just-me (this laptop)", "just me"), ("private", "just me"),
                            ("team", "team"), ("just meh", "team"), ("", "team")):
             self.assertEqual(sharing.sharing(self.home("- sharing: {}\r\n".format(line))), want, line)
@@ -105,7 +111,6 @@ class OneLineReaderTest(support.Scratch):
         self.assertEqual(config.agent_cap(self.home("* agent CAP: 3  # tight\n")), 3)
         self.assertEqual(config.build_tier(self.home("- Build tier: full\n")), "full (config)")
         self.assertEqual(config.checking(self.home("- checking: per task  # risky\n")), "per task (config)")
-        self.assertEqual(config.seat_models(self.home("- Seat Models: On (yes)\n")), "on")
         self.assertEqual(sharing.sharing(self.home("- Sharing: just me\n")), "just me")
         self.assertTrue(config.notifications_off(self.home("- NOTIFICATIONS: off (phone)\n")))
         self.assertEqual(config.gate_time_limit(self.home("- Gate time limit: 15m  # ci is slow\n")), (900, "15m"))

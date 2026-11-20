@@ -10,7 +10,7 @@ project's scale?* Say how sure you are, and why. Research answers a question wit
 leaves the answer on disk, so the next session starts from it. One fixed seat, the **designer**
 (`small-council:council-worker`), reads the book and the code under the question; a second,
 independent designer joins only for a decision that is hard to undo. No expert seat is dispatched:
-a catalogue page is reading the designer is handed for a protected subject. Nothing is built. This
+a watch list is reading the designer is handed for a protected subject. Nothing is built. This
 page is the whole method: it invokes no other skill and reads no stage doctrine.
 
 **Calling the helper.** Always a plain `council <command>` (if `command -v council` fails,
@@ -40,8 +40,8 @@ for** a one-file lookup (just read it), or re-opening something the owner alread
 1. `council state phase=prepare`, then `council memory select`.
 2. Fill every `<…>` line of `brief.md` in one Edit: the Request as the question, the decision and
    the answer's shape; the slice's start; `answer:` the question, to answer first; `reading:` the
-   catalogue page for a protected subject or for the question's domain (`quality-performance.md`
-   for "why is it slow?"), else none; the hard rules, what memory select printed and each
+   watch list for a protected subject or for the question's domain (`quality-performance.md`
+   for "why is it slow?"), else none; the watch lists of the stack rows the question touches, as `council book` prints them (two at most for a seat); the hard rules, what memory select printed and each
    `council state decision=` entry, word for word. `none` where there is nothing.
 3. **Hard to undo?** When the question chooses one (a stack, a data format, a public interface, a
    migration): uncomment the plan's `designer-2` rows and add their tokens. Then

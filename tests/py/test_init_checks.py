@@ -6,7 +6,7 @@ import unittest
 
 import support
 
-from council.commands import init_checks, init_seats, init_write
+from council.commands import init_checks, init_lists, init_write
 
 
 class ChecksTest(support.Scratch):
@@ -62,23 +62,23 @@ class ChecksTest(support.Scratch):
         self.assertEqual(self.found({"README.md": "run pytest and cargo test\n", "src/a.py": ""}), {})
 
 
-class SeatsTest(unittest.TestCase):
+class WatchListsTest(unittest.TestCase):
     def test_markers_from_the_file_list(self) -> None:
         files = ["src/auth/login.py", "src/auth/tokens.py", "web/App.tsx", "web/a.css", "tests/test_a.py",
                  "db/migrations/1.sql", "README.md"]
-        self.assertEqual(init_seats.markers("hunt", files), ("src/auth/**", "**/login.py", "**/tokens.py"))
-        self.assertEqual(init_seats.markers("dodds", files), ("**/*.tsx",))
-        self.assertEqual(init_seats.markers("saarinen", files), ("**/*.css", "**/*.tsx"))
-        self.assertEqual(init_seats.markers("beck", files), ("**/test_*.py", "tests/**"))
-        self.assertEqual(init_seats.markers("leach", files), ("**/*.sql", "db/**"))
-        self.assertEqual(init_seats.markers("perf", files), ())
-        self.assertEqual(init_seats.markers("fowler", files), ("whatever no other seat claims",))
+        self.assertEqual(init_lists.markers("security", files), ("src/auth/**", "**/login.py", "**/tokens.py"))
+        self.assertEqual(init_lists.markers("quality-frontend", files), ("**/*.tsx",))
+        self.assertEqual(init_lists.markers("quality-ui", files), ("**/*.css", "**/*.tsx"))
+        self.assertEqual(init_lists.markers("quality-testing", files), ("**/test_*.py", "tests/**"))
+        self.assertEqual(init_lists.markers("quality-postgres", files), ("**/*.sql", "db/**"))
+        self.assertEqual(init_lists.markers("quality-performance", files), ())
+        self.assertEqual(init_lists.markers("refactoring", files), ())
 
-    def test_the_catalog_as_it_names_its_seats(self) -> None:
-        seats = init_seats.catalog(str(support.SRC.parent))
-        self.assertEqual(len(seats), 14)
-        self.assertIn(("Troy Hunt", "hunt", "Security", "references/security.md"), seats)
-        self.assertIn(("Performance", "perf", "Performance", "references/quality-performance.md"), seats)
+    def test_the_page_as_it_names_its_lists(self) -> None:
+        lists = init_lists.shipped(str(support.SRC.parent))
+        self.assertEqual(len(lists), 14)
+        self.assertIn(("security", "Security"), lists)
+        self.assertIn(("quality-performance", "Performance"), lists)
 
 
 class GateRowTest(unittest.TestCase):

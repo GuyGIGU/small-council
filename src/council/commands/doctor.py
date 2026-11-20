@@ -1,5 +1,6 @@
 """council doctor: what would stop the council working here, or make it work worse, each as ERROR or WARN with its
-fix — the config and its roster, cards and gates; open runs left behind, run plans and event streams; the memory;
+fix — the config, the expert seats an older one still carries, and its gates; open runs left behind, run plans and
+event streams; the memory;
 the book; the map; the stack fingerprint; what .council/.gitignore keeps out; and, when sharing is just me, what still
 shares it. Exit 1 when there is an error."""
 from __future__ import annotations
@@ -7,18 +8,15 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import time
 from pathlib import Path
 
 from council import git
 from council.commands import cli, fingerprint, plan, resolve
-from council.records import bytewise, cells, config, events, ignores, map_file, paths, runs, sharing
+from council.records import bytewise, config, events, ignores, map_file, paths, runs, sharing
 from council.records import home as where
 from council.records import plan as plan_file
 
-PLUGIN = Path(__file__).resolve().parents[3].as_posix()
-CARD_LIMIT = 8192
 STALE_DAYS = 2              # find -mtime +2: open for three whole days or more
 
 
@@ -72,7 +70,7 @@ def main(args: cli.Args, words: list[str]) -> int:
         from council.commands import doctor_config
         doctor_config.settings(doc)
         doctor_config.quick(doc)
-        roster(doc)
+        unused_seats(doc)
         from council.commands import doctor_gates
         doctor_gates.gates(doc)
     from council.commands import doctor_rules
@@ -94,54 +92,45 @@ def main(args: cli.Args, words: list[str]) -> int:
     return 0 if doc.errors == 0 else 1
 
 
-def ref_path(ref: str, root: str) -> str:
-    """A roster or card reference as a file path: references/… is in the plugin, anything else in the repo."""
-    if ref.startswith("references/"):
-        return PLUGIN + "/" + ref
-    return ref if where.absolute(ref) else root + "/" + ref
-
-
 def _isfile(path: str) -> bool:
     return os.path.isfile(where.native(path))
 
 
-def roster(doc: Doctor) -> None:
-    rows = [tuple(bytewise.shown(c) for c in (row.slug or "-", row.seat, row.reference or "-"))
-            for row in config.roster_table(where.native(doc.home))]
-    if not rows:
-        doc.warn("couldn't read a Roster table in %s" % config.NAME,
-                 "run council-init refresh (older configs list seats instead of a table)")
+def unused_seats(doc: Doctor) -> None:
+    """What an older config still carries of the expert seats (D72): its ## Roster section and its - cards: and
+    - ledger: lines, which no run reads, the project's own pages the roster points at (watch lists now) and the
+    seat cards on disk. One warning, and nothing at all for a config that carries none of them."""
+    native = where.native(doc.home)
+    rows = config.roster_table(native)
+    written = rows or any(line.strip() for _, line in config.section(native, "roster"))
+    carried = ["its ## Roster section (%d seat(s))" % len(rows)] if written else []
+    for _, line in config.section(native, "memory"):
+        found = config.pref_of(line)
+        if found and found.key in ("cards", "ledger"):
+            carried.append("its `- %s:` line" % found.key)
+    if not carried:
         return
-    cards = doc.home + "/cards"          # a seat's card is written the first run that selects it: none is no finding
-    for slug, seat, ref in rows:
-        if ref not in ("none", "n/a", "-") and not _isfile(ref_path(ref, doc.root)):
-            doc.error("seat '%s' points at a reference doc that doesn't exist: %s" % (seat, ref),
-                      "restore the doc, or point the seat at another one in %s" % config.NAME)
-        if slug == "-":
-            doc.warn("seat '%s' has no slug" % seat,
-                     "give it a lowercase slug in the roster — it names the seat's file and card")
-        else:
-            card(doc, seat, slug, cards + "/" + slug + ".md")
-    slugs = [slug for slug, _, _ in rows if slug != "-"]
-    shared = sorted({s for s in slugs if slugs.count(s) > 1}, key=bytewise.text)
-    if shared:
-        doc.error("the roster repeats a slug: %s" % " ".join(shared),
-                  "give each row its own slug — a lens that covers two areas gets two (dodds-web, dodds-admin)")
+    pages = sorted({bytewise.shown(row.reference) for row in rows
+                    if row.reference and not row.reference.startswith("references/")
+                    and row.reference not in ("none", "n/a", "-")})
+    cards = _cards(doc.home)
+    said = "%s still carries the expert seats, which no run reads: %s" % (config.NAME, ", ".join(carried))
+    if pages:
+        said += "; the project's own page(s) it points at are watch lists now: %s" % ", ".join(pages)
+    if cards:
+        said += "; %d seat card(s) under .council/cards/ are unused too: %s" % (len(cards), ", ".join(cards))
+    doc.warn(said, "run a council-init refresh — it names each of the project's own pages on the stack page as a watch "
+                   "list, re-scopes the memory entries scoped to a seat, then removes the section and the lines on "
+                   "your yes; the card files are yours to delete or keep, and it deletes none")
 
 
-def card(doc: Doctor, seat: str, slug: str, path: str) -> None:
-    """A card that exists is checked; a seat with none yet is fine, since its first run writes it."""
-    data = paths.contents(where.native(path))
-    if data is None:
-        return
-    source = cells.field(data.decode("utf-8", "surrogateescape"), "source")
-    source = re.sub(r"[ \t\n\v\f\r]*·.*\Z", "", source, count=1, flags=re.S).replace("`", "")
-    if source and not _isfile(ref_path(source, doc.root)):
-        doc.error("the card for '%s' names a source doc that doesn't exist: %s" % (seat, source),
-                  "point the card's source: line at the seat's reference doc")
-    if len(data) > CARD_LIMIT:
-        doc.warn("the card for '%s' is over 8 KB" % seat,
-                 "cut it to one line per principle — the full doc holds the detail")
+def _cards(home: str) -> list[str]:
+    """The seat card files under the council home's cards/, by name."""
+    try:
+        names = os.listdir(where.native(home + "/cards"))
+    except OSError:
+        return []
+    return sorted((name for name in names if name.endswith(".md")), key=bytewise.text)
 
 
 def _stale_states(home: str) -> set[str]:
@@ -251,7 +240,8 @@ def stack(doc: Doctor) -> None:
         said = said[len("fingerprint: "):]
         at = said.rfind(". Suggest")
         doc.warn(said[:at] if at >= 0 else said,
-                 "run a council-init refresh — it re-checks the roster, cards and gates against the new stack")
+                 "run a council-init refresh — it re-checks the stack page, its watch lists and the gates against "
+                 "the new stack")
     elif said.startswith("no stack-fingerprint"):
         doc.warn("the config has no stack-fingerprint",
                  "a council-init refresh records one, so a changed stack gets noticed")

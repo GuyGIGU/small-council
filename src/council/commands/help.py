@@ -17,13 +17,13 @@ council — the Small Council's helper (Python 3.8+ and git)
                                          CLAUDE.md points at it) or just me (git ignores it through its own
                                          exclude list, and the CLAUDE.md note goes); no word shows what's left
   council init detect                    setup's reading: the stack fingerprint, the project's candidate checks
-                                         (each with its probe and broken twin to run) and the catalog's seats
-                                         with the surface the file list shows; writes nothing
+                                         (each with its probe and broken twin to run) and each watch list with
+                                         what the file list shows for it; writes nothing
   council init scaffold [--quick] [--run <folder>]
                                          write the setup files from the templates (config, conventions.md,
                                          map.md, .gitignore), never over one already there; Gates rows from the
                                          open council-init run's probes, an unprobed check ✗ not probed;
-                                         --quick: the catalog's seats, no map, sharing just me
+                                         --quick: no probes, no map, no book, sharing just me
   council pushes [check git push|gh pr create]  the push freeze · check: the bash gate's decision (exit 2 while held)
   council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]
                                          open a run for a mode, e.g. council-review (or review); prints its
