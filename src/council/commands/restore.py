@@ -32,10 +32,16 @@ def main(args: cli.Args, words: list[str]) -> int:
     if words not in (["point"], ["show"]):
         raise cli.Refusal(USAGE)
     run = resolve.run_folder(args)
-    top = where.native(resolve.field(run, "code-root") or where.this_tree())
-    if git.text(top, "rev-parse", "--is-inside-work-tree") != "true":
+    top = in_git(run)
+    if not top:
         raise cli.Refusal(NOT_GIT % run.as_posix())
     return point(run, top) if words == ["point"] else show(run, top)
+
+
+def in_git(run: Path) -> str:
+    """The run's code root as git takes it, when it is inside a git work tree; '' when it is not."""
+    top = where.native(resolve.field(run, "code-root") or where.this_tree())
+    return top if git.text(top, "rev-parse", "--is-inside-work-tree") == "true" else ""
 
 
 def point(run: Path, top: str) -> int:

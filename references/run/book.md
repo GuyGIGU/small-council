@@ -28,6 +28,28 @@ architecture doc that holds the stack) is named for both.
 - **Known problems** starts empty.
 - Propose the pages with the roster and write them on the owner's yes, as every Phase E item is.
 
+## After a build: the Chair keeps the design page true
+
+A build that adds a part, gives a folder a new owner, brings in a new way for a job (on the owner's
+ruling) or changes where new code goes leaves the design page untrue, and a health pass would then
+call the page's own staleness drift. So at a build's Deliver, before the report (council-implement,
+section 6, step 2), the Chair edits the page:
+
+- **Only the lines the build made untrue or left out**, and only for what the build actually changed,
+  as the diff since the restore point or the reader's file shows it. Nothing the build did not touch
+  is edited, and the rest of the page is never tidied or rewritten.
+- **A part, an owner, where new code goes:** the page's line, in its section. **A new way for a job:**
+  a row of the map's `## One way per job` table, the page pointing at it (D35). **A rule** changes
+  only on the owner's word, never as a side effect of a build.
+- **Within its size** (at most two pages): a line that would push it past is proposed to the owner as
+  a numbered cut by the rules of What earns a line, never squeezed in.
+- **Where the page is the project's own file** (named under `## Book`, such as
+  `docs/architecture.md`), the same edit goes into that file in the working tree, as part of the
+  change the owner reviews: it is in the log's Ready for review, and the restore point takes it back
+  with the rest. Under the council home, the page is edited in place.
+- **The report names it** in one line under Works now: *"The design page now says <what changed>."*
+  Nothing made untrue: no edit and no line.
+
 ## What earns a line
 
 - **A line enters only if removing it would change what an agent does.** A line that restates the

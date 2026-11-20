@@ -26,10 +26,10 @@ STAGES = {  # name: (rank, next step); a build stands where council-implement's 
 SHORT = "convene prepare judge challenge deliver learn"
 PAIRED = "convene prepare work judge challenge deliver learn"   # fixed seats, no roster to assign or brief
 REQUIRED = {"council-implement": "convene prepare build challenge deliver learn", "council-postgame": PAIRED,
-            "council-review": PAIRED, "council-health": PAIRED}   # the reader and the runner (D50); D65's; D67's
+            "council-review": PAIRED, "council-health": PAIRED}   # the reader and the runner (D50); D65's; D68's
 ONE_PAGE = ("council-review", "council-implement", "council-plan", "council-research",   # a mode whose method is its
             "council-health", "council-postgame")   # own page alone, no context-core or doctrine (D47; D56; D60; D65;
-#                                                     a post-game's, D67)
+#                                                     a post-game's, D68)
 FOLLOWS = {"council": ("council-plan", "council-implement")}   # /council: no run of its own, a plan run then a build
 #                                     run, its page naming their pages' sections (D64)
 

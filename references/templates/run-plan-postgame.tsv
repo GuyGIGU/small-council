@@ -1,4 +1,4 @@
-# Small Council run plan v1, as a post-game opens it (D67). Keep exactly five tab-separated columns.
+# Small Council run plan v1, as a post-game opens it (D68). Keep exactly five tab-separated columns.
 # Fixed: the reader and the runner on the request's parts, and the main session's own check of each verdict.
 # Change estimated-tokens to your estimate and say why. A finding on a protected subject: add the
 # verifier's rows below, add its tokens, and set verification to independent.
@@ -6,13 +6,13 @@ kind	id	field	value	reason
 schema	plan	version	1	versioned run-plan contract
 run	run	id	{{RUN}}	bind this plan to its run folder
 run	run	mode	{{MODE}}	mode chosen when the run opened
-run	run	size	squad	two fixed seats, the reader and the runner, against the request (D67)
+run	run	size	squad	two fixed seats, the reader and the runner, against the request (D68)
 assessment	run	risk	medium	a post-game changes nothing, but a part it calls met that is not stays missing
 assessment	run	complexity	medium	two agents on the finished work at once
 assessment	run	uncertainty	medium	whether each part was built is what the pair finds out
 budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
 budget	run	estimated-tokens	500000	the review's pair (about 470k on a real change), plus the main session's check
-verification	run	level	self	the main session checks each part's verdict against the code itself (D67)
+verification	run	level	self	the main session checks each part's verdict against the code itself (D68)
 seat	chair	disposition	selected	the main session splits the request, checks the verdicts and writes the post-game
 seat	chair	role	chair	the one head
 context	chair	level	focused	the request, the verdicts and the code they cite

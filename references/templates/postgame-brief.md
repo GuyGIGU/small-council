@@ -1,4 +1,4 @@
-# What a post-game's brief adds to the review's (D67)
+# What a post-game's brief adds to the review's (D68)
 
 `council run open council-postgame` writes the review's brief, `review-brief.md`, and puts the block
 below on its `{{POSTGAME}}` line. The role texts stay in the review's brief, word for word, never

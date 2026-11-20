@@ -12,7 +12,7 @@ you change anything.
 - **A mode is one page.** Its steps in order, the helper commands and the rules they need; it
   invokes no other skill and reads no stage doctrine. `council-review`, `council-implement`,
   `council-plan`, `council-research`, `council-health` and `council-postgame` are each their own page
-  (D47, D56, D60, D65, D67), and `council` joins the plan and build pages (D64). Copy
+  (D47, D56, D60, D65, D68), and `council` joins the plan and build pages (D64). Copy
   `skills/council-review/SKILL.md` for shape, brevity and voice.
 - **The helper does the mechanics.** If a step can be done or checked by a script — opening and
   closing runs, gates, the change index, checking seat files or citations — it belongs in the

@@ -21,6 +21,7 @@ DEFAULTS = {"design": "design.md", "stack": "stack.md", "known problems": "known
 MEMORY = "memory"                      # the decisions log's word for the memory file
 FOUND, WAIVED = "Found, not fixed", "Not to raise again"
 TEMPLATE = "known-problems.md"
+LINES = {"design": 120, "stack": 60}   # a page's size, at most (references/run/book.md's table)
 
 
 class Page(NamedTuple):
@@ -50,18 +51,25 @@ def _configured(home: str) -> dict[str, str]:
     return found
 
 
+def in_config(home: str) -> bool:
+    """Whether the config has a `## Book` heading: one set up before the book (2.0) has none, and reads every page
+    from its default place."""
+    data = paths.contents(where.native(home + "/" + config.NAME)) or b""
+    return any(cells.heading(line) == "book" for line in cells.lines_of(data.decode("utf-8", "replace")))
+
+
+def default(home: str, name: str) -> str:
+    """A page's place when the config names none (the decisions log's is the memory file)."""
+    return memory.locate(home).path if name == "decisions" else home + "/" + DEFAULTS[name]
+
+
 def pages(home: str) -> list[Page]:
     """The book's four pages, in PAGES order."""
     said, root, out = _configured(home), _root(home), []
     for name in PAGES:
         value = said.get(name, "")
         kept = name == "decisions" and (not value or value.lower() == MEMORY)
-        if kept:
-            path = memory.locate(home).path
-        elif value:
-            path = memory.absolute(root, value)
-        else:
-            path = home + "/" + DEFAULTS[name]
+        path = memory.absolute(root, value) if value and not kept else default(home, name)
         path = path.replace("\\", "/")
         out.append(Page(name, path, bool(value), os.path.exists(where.native(path)), kept))
     return out

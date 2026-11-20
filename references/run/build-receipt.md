@@ -44,7 +44,8 @@ runner (a post-game's verifier too) are back, never beside a fix question, and i
    From the date on, or for a word it can't read, it is `on`, and it says which.
 2. **Fetch first:** `git fetch`, then `gh pr list --state all`. Say whether the base moved since
    the restore point and whether a related PR merged; no remote or no `gh`, say that instead.
-3. **The PR text:** print `<run>/pr-body.md` for the user's edit or OK. The PR question comes only
+3. **The PR text:** write it from the report (Works now, Does not work, Not proved, the Undo
+   line), in the owner's terms; print `<run>/pr-body.md` for the user's edit or OK. The PR question comes only
    after that OK.
 
 ### The post-game and review offers

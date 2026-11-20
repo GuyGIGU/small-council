@@ -23,9 +23,9 @@ PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review
          "council-postgame": "run-plan-postgame.tsv"}                                   # else run-plan.tsv
 BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md",   # the pair's role texts (D48)
           "council-plan": "design-brief.md", "council-research": "design-brief.md",     # the designer's (D60)
-          "council-health": "review-brief.md", "council-postgame": "review-brief.md"}   # the pair's again (D65, D67)
+          "council-health": "review-brief.md", "council-postgame": "review-brief.md"}   # the pair's again (D65, D68)
 LINES = {"council-implement": "build-brief.md",   # what a build's brief adds to the review's (D56), a health
-         "council-health": "health-brief.md",     # pass's (D65) and a post-game's (D67), each block on its
+         "council-health": "health-brief.md",     # pass's (D65) and a post-game's (D68), each block on its
          "council-postgame": "postgame-brief.md"}  # {{NAME}} line
 BLOCKS = ("BUILD", "BUILD_RUNNER", "HEALTH", "POSTGAME")
 LOOP = "council"   # /council: no run of its own (D64)

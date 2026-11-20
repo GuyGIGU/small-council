@@ -6,7 +6,28 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-- **The post-game runs on the new path.** `/council-postgame` ("did we build what I asked?") is one page, like the review: the reader and the runner each check every part of your original request, one against the code and one by running it in a scratch copy, and the main session checks each verdict before you see it. The report and the next tasks council-implement builds from are unchanged. It costs about 500k tokens, as a review does (it was about 100–180k with one checker). Finish or pause an open post-game run before updating. D67, on the owner's word; built before any test of it.
+### Changed
+- **The post-game runs on the new path.** `/council-postgame` ("did we build what I asked?") is one page, like the review: the reader and the runner each check every part of your original request, one against the code and one by running it in a scratch copy, and the main session checks each verdict before you see it. The report and the next tasks council-implement builds from are unchanged. It costs about 500k tokens, as a review does (it was about 100–180k with one checker). Finish or pause an open post-game run before updating. D68, on the owner's word; built before any test of it.
+- **A small request through `/council` is two agents, not four.** One part, one existing way and
+  nothing hard to undo: the main session writes the design and reads the change against the book
+  itself; one builder builds it and the runner proves it. A bug underneath, a real choice or
+  anything hard to undo puts the designer and the reader back (D67).
+- **A build keeps the book's design page true.** At the end of a build, the lines the build made
+  untrue are corrected (in the project's own architecture file when the book uses one), and the
+  report says what changed. `/council-health` checks a page's age before calling a difference
+  drift (D67).
+- **`council doctor` checks the book.** It warns, each with its fix, when the config has no book
+  section (set up before 2.0: run a `council-init` refresh), when a page the book names is missing,
+  when there is no design or stack page yet, and when the design page passes 120 lines or the stack
+  page 60. Warnings only: a run still goes.
+
+### Fixed
+- **`council state restore=backup` is refused in a project that has git**, so a build can no longer
+  start without its restore point; the refusal names `council restore point`.
+- **A build writes its PR text again.** The 2.0.0 build page dropped the step that writes
+  `<run>/pr-body.md`, so the step that shows it to you had nothing to show.
+- The undo is now tested for a file the build turned into a folder, and the reverse; both come
+  back. An ignored file inside such a folder is removed with it.
 
 ## [2.0.0] — 2026-11-19
 

@@ -163,10 +163,10 @@ For each task, in order:
 
 1. `council state phase=deliver`, then `council check`: copy its Checked by machine, Your
    decisions and Not proved lines; fix or report broken proof.
-2. `council ask save`. Finish the log: `## Shortcuts and concessions` (every shortcut, or `none`),
-   `## Converge` (the template's table: each task's behaviour line met, partly met or not met, and
-   how it was shown),
-   Ready for review (every file changed), `Post-game: offered <date> — yes | no`. Then
+2. `council ask save`. The design page (section 7, step 1). Finish the log:
+   `## Shortcuts and concessions` (every shortcut, or `none`), `## Converge` (the template's table:
+   each task's behaviour line met, partly met or not met, and how it was shown), Ready for review
+   (every file changed), `Post-game: offered <date> — yes | no`. Then
    `council state deliverable=<the log's path>`.
 3. `council restore show`: the restore point and its commands, for the Undo line.
 4. **Pictures.** A behaviour line the owner can see on screen: start the old and the new end (the
@@ -193,7 +193,10 @@ For each task, in order:
 1. **Into the book:** each Noticed for later line and each builder's `Noticed:` line,
    `council book note "<…> — <path:line> (build <date>)"`; each decision the owner made that
    changes the design or the stack, a new entry in the decisions log in their words
-   (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`).
+   (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`). **The design page**, done at section 6, step 2:
+   only the lines this build made untrue or left out (a part, a folder's owner, a job's new way,
+   where new code goes), as the diff shows it, within its size; the project's own design file gets
+   the same edit, as part of the change; the report names it (`book.md`, After a build).
 2. `council state phase=learn`, then `council run close`; tell the owner its warnings in plain
    words. Delete `<run>/scratch`, the runner's clones.
 3. End with one question: *check it against your request with council-postgame?*

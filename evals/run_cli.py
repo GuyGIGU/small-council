@@ -659,7 +659,7 @@ def runs_open(tmp):
                 with open(written_path, "rb") as f:
                     written = f.read()
             # {{BOOK}} is the book's first three pages, a line each (two more); a review's two {{BUILD…}} lines, its
-            # {{HEALTH}} and {{POSTGAME}} lines are taken out (four fewer, D56, D65, D67); the designer's brief has
+            # {{HEALTH}} and {{POSTGAME}} lines are taken out (four fewer, D56, D65, D68); the designer's brief has
             # none of them (D60)
             grown = {"design-brief.md": 2, "review-brief.md": -2}.get(name, 0)
             check("run open %s: a CRLF %s template is written with LF line ends, on every OS" % (mode, name),
@@ -3797,7 +3797,7 @@ def runs_helper_carries_next_steps(tmp):
     plan_next = re.search(r"^next:[ 	]*(.*)$", read(os.path.join(prun, "session-state.md")), re.MULTILINE).group(1)
     council(nx, "state", "phase=work")
     check("state phase=: a review's next after phase=work names council-review and no doctrine file; a post-game "
-          "run's names its own page's section too since D67 (a plan's since D60: the design group)",
+          "run's names its own page's section too since D68 (a plan's since D60: the design group)",
           "council-review" in nxt() and "doctrine" not in nxt() and ".md" not in nxt()
           and "(council-postgame, section 2)" in plan_next and "doctrine" not in plan_next, str((nxt(), plan_next)))
     code, out, err = council(nx, "state", "decision=Go ahead with the Squad, four seats")
@@ -5679,10 +5679,10 @@ def runs_stage_order_and_close(tmp):
           code == 2 and "would skip challenge" in err and phase_of(nwr) == "judge", err)
     pg, pgr = fresh("order-postgame", "council-postgame", selected=("chair", "reader", "runner"), verification="self")
     code, out, err = council(pg, "state", "phase=challenge")
-    check("state phase=: a post-game can't leave out Prepare, Work and Judge either (D67)",
+    check("state phase=: a post-game can't leave out Prepare, Work and Judge either (D68)",
           code == 2 and "would skip prepare, work, judge" in err, err)
     check("state phase=: a post-game's own path — the review's: Prepare, Work, Judge, Challenge, Deliver, Learn — "
-          "needs no skip= (D67)", steps(pg, "prepare", "work", "judge", "challenge", "deliver", "learn") == [0] * 6,
+          "needs no skip= (D68)", steps(pg, "prepare", "work", "judge", "challenge", "deliver", "learn") == [0] * 6,
           read(os.path.join(pgr, "events.tsv")))
     init = new_repo(tmp, "order-init")
     council(init, "run", "open", "council-init")
@@ -5701,11 +5701,27 @@ def runs_stage_order_and_close(tmp):
     code, out, err = council(bd, "state", "restore=later")
     check("state restore=: takes backup only, naming council restore point", code == 2 and "restore= takes backup only"
           in err and "council restore point" in err, err)
-    nogit, ngr = fresh("order-build-backup", "council-implement")
-    council(nogit, "state", "phase=prepare")
-    code, out, err = council(nogit, "state", "restore=backup")
-    check("state phase=build: outside git, the backup recorded (restore=backup) lets a build start with no point",
-          code == 0 and council(nogit, "state", "phase=build")[0] == 0 and phase_of(ngr) == "build", out + err)
+    ingit, igr = fresh("order-build-backup", "council-implement")
+    council(ingit, "state", "phase=prepare")
+    code, out, err = council(ingit, "state", "restore=backup")
+    code2, out2, err2 = council(ingit, "state", "phase=build", "restore=backup")
+    check("state restore=backup: refused when the code root is in git, alone or with phase=build, naming council "
+          "restore point; nothing recorded and the build stays in Prepare",
+          code == 2 and code2 == 2 and "restore=backup is for a code root outside git" in err
+          and "next: council restore point" in err and "restore=backup is for a code root outside git" in err2
+          and phase_of(igr) == "prepare" and "restore: " not in read(os.path.join(igr, "session-state.md")),
+          err + err2)
+    council(ingit, "run", "close", "--status", "abandoned")
+    plain = os.path.join(tmp, "order-build-no-git")
+    os.makedirs(plain)
+    ngr = council(ingit, "run", "open", "council-implement", "--code-root", plain)[1].strip().splitlines()[-1]
+    write_plan(ngr)
+    on = ("--run", os.path.basename(ngr))
+    council(ingit, "state", "phase=prepare", *on)
+    code, out, err = council(ingit, "state", "restore=backup", *on)
+    check("state restore=backup: outside git it is recorded, and a build starts with no point",
+          code == 0 and "restore: backup" in read(os.path.join(ngr, "session-state.md"))
+          and council(ingit, "state", "phase=build", *on)[0] == 0 and phase_of(ngr) == "build", out + err)
     council(bd, "restore", "point")
     check("state phase=: a build's own path — Prepare, Build, Challenge, Deliver, Learn — needs no skip=",
           steps(bd, "build", "challenge", "build", "challenge", "deliver", "learn") == [0] * 6, read(os.path.join(bdr, "events.tsv")))
@@ -5843,7 +5859,7 @@ def runs_stage_order_and_close(tmp):
           and len(kinds) - 1 - kinds[::-1].index("run.chair_usage") < kinds.index("run.closed"), out + err + repr(chair_rows))
 
     # Beside the Chair's tokens, the method its mode loads (D13), counted here from the files themselves: a review's
-    # is its own page alone (D47), and so is a plan's (D60) and a post-game's (D67).
+    # is its own page alone (D47), and so is a plan's (D60) and a post-game's (D68).
     short = len(Path(ROOT, "skills", "council-review", "SKILL.md").read_bytes().replace(b"\r\n", b"\n"))
     check("run close: the method load is recorded beside the Chair's tokens (method_bytes=) and said on the same line — "
           "a review's is its one page",
@@ -5862,7 +5878,7 @@ def runs_stage_order_and_close(tmp):
     code, out, err = council(wu, "run", "close", "--status", "abandoned", env={"CLAUDE_CONFIG_DIR": ccfg})
     full = len(Path(ROOT, "skills", "council-postgame", "SKILL.md").read_bytes().replace(b"\r\n", b"\n"))
     rows = [e[6] for e in events(wur) if e[3] == "run.chair_usage"]
-    check("run close: a post-game records its one page as its method, the D13 figure, as a review does (D67)",
+    check("run close: a post-game records its one page as its method, the D13 figure, as a review does (D68)",
           code == 0 and rows == ["calls=1;basis=complete;method_bytes=%d" % full]
           and "· method load: {:,} bytes (council-postgame's one page)".format(full) in out, out + err + repr(rows))
     os.remove(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"))
@@ -10597,6 +10613,69 @@ def book_in_briefs(tmp):
           "· decisions %s/conventions.md" % slash(os.path.join(repo, ".council")), out[:600] + err)
 
 
+@part("book")
+def book_in_doctor(tmp):
+    """council doctor reports the book (D52) through its reader, each finding a WARN with its next step and paths from
+    the project's folder: no design or stack page yet, a page ## Book names that isn't there, a design or stack page
+    past book.md's size, and a config with no ## Book section; a book in order says nothing, and decisions and known problems may wait to be written."""
+    def finding(out, text):          # a WARN line holding text, with the Fix line under it
+        lines = out.splitlines()
+        at = next((i for i, line in enumerate(lines) if line.startswith("WARN") and text in line), None)
+        return "" if at is None else lines[at] + "\n" + (lines[at + 1] if at + 1 < len(lines) else "")
+
+    repo = setup_repo(tmp, "book-doctor", {"a.py": "1\n"})
+    council(repo, "init", "scaffold", "--quick")
+    cfg_path = os.path.join(repo, ".council", "council.config.md")
+    cfg = read(cfg_path)
+    code, out, err = council(repo, "doctor")
+    design, stack = finding(out, "no design page yet"), finding(out, "no stack page yet")
+    check("doctor: no design page and no stack page yet are WARNs naming the place, why every agent needs it and a "
+          "council-init refresh; decisions and known problems not written yet say nothing",
+          code == 0 and "(.council/design.md)" in design and "the one way each job is done" in design
+          and "(.council/stack.md)" in stack and "council-init refresh" in design and "council-init refresh" in stack
+          and "decisions log" not in out and "known-problems" not in out, out + err)
+    write(os.path.join(repo, ".council", "design.md"), "# Design\n" + "- a line\n" * 119)
+    write(os.path.join(repo, ".council", "stack.md"), "# Stack\n" + "- a row\n" * 59)
+    code, out, err = council(repo, "doctor")
+    check("doctor: a book whose design page and stack page are there and within their size says nothing of it",
+          code == 0 and "design page" not in out and "stack page" not in out and "## Book" not in out
+          and out.count("Fix:") == out.count("ERROR") + out.count("WARN "), out + err)
+    write(os.path.join(repo, ".council", "design.md"), "# Design\n" + "- a line\n" * 120)
+    write(os.path.join(repo, ".council", "stack.md"), "# Stack\n" + "- a row\n" * 60)
+    code, out, err = council(repo, "doctor")
+    design, stack = finding(out, "the design page"), finding(out, "the stack page")
+    check("doctor: a design page past 120 lines and a stack page past 60 are WARNs, cut by book.md's rules as "
+          "numbered lines put to the owner",
+          code == 0 and "is 121 lines, past its 120" in design and "is 61 lines, past its 60" in stack
+          and "numbered lines" in design and "What earns a line" in stack, out + err)
+    write(os.path.join(repo, "docs", "architecture.md"), "# Architecture\n" + "- a line\n" * 100)
+    write(cfg_path, cfg.replace("- design: .council/design.md", "- design: docs/architecture.md", 1)
+          .replace("- stack: .council/stack.md", "- stack: docs/architecture.md (adopted)", 1))
+    code, out, err = council(repo, "doctor")
+    check("doctor: one page named for both design and stack is held to the design page's size, not the stack's",
+          code == 0 and "past its" not in out and "design page" not in out and "stack page" not in out, out + err)
+    write(cfg_path, cfg.replace("- design: .council/design.md", "- design: docs/gone.md", 1)
+          .replace("- decisions: memory", "- decisions: docs/adr", 1)
+          .replace("- known problems: .council/known-problems.md", "- known problems: KNOWN_ISSUES.md", 1))
+    code, out, err = council(repo, "doctor")
+    design, log, known = finding(out, "as the design page"), finding(out, "decisions log"), finding(out, "known-")
+    check("doctor: a page ## Book names at the project's own place that isn't there is a WARN naming it, with where "
+          "to point the line and what to do if the project has none",
+          code == 0 and "names docs/gone.md as the design page, and it doesn't exist" in design
+          and "point `- design:` under ## Book at it" in design and "council-init refresh" in design
+          and "names docs/adr as the decisions log" in log and "## Decisions (D)" in log
+          and "names KNOWN_ISSUES.md as the known-problems page" in known and "next council book note" in known
+          and "starts .council/known-problems.md" in known, out + err)
+    write(cfg_path, re.sub(r"## Book\n(?:[^#\n].*\n|\n)*", "", cfg, count=1))
+    os.remove(os.path.join(repo, ".council", "stack.md"))
+    code, out, err = council(repo, "doctor")
+    old = finding(out, "no ## Book section")
+    check("doctor: a config with no ## Book section (set up before the book) is one WARN naming the pages not "
+          "written yet and a council-init refresh",
+          code == 0 and "## Book" not in read(cfg_path) and "under .council; not written yet: stack" in old
+          and "Fix: run a council-init refresh" in old and "no stack page yet" not in out, out + err)
+
+
 
 @part("build")
 def build_opens_with_the_pair(tmp):
@@ -10860,6 +10939,33 @@ def restore_undo_keeps_deletions(tmp):
               and os.path.isfile(os.path.join(repo, ".council", "council.config.md")), got["failed"] + got["out"])
 
 
+@part("build")
+def restore_undo_file_and_folder(tmp):
+    """The printed undo (D57) when a path changes kind: a tracked file a.txt the build replaced by a folder a.txt/
+    (a committed file in it and an untracked one), and a folder b/ (a tracked file in it) replaced by a file b, left
+    uncommitted — every line runs and the tree is back exactly: a.txt a file, b/ a folder, HEAD where it was and
+    the index as HEAD. Under core.autocrlf false and true."""
+    for crlf in (False, True):
+        tag = " (core.autocrlf %s)" % str(crlf).lower()
+        repo = small_council_repo(tmp, "undo-kind-%d" % crlf, "")
+        committed(repo, "b/f.txt", "f\n", "b")
+        head = git(repo, "rev-parse", "HEAD")
+
+        def build(r):
+            os.remove(os.path.join(r, "a.txt"))
+            committed(r, "a.txt/x.txt", "x, made by the build\n", "task 1")
+            write(os.path.join(r, "a.txt", "loose.txt"), "untracked, made by the build\n")
+            shutil.rmtree(os.path.join(r, "b"))
+            write(os.path.join(r, "b"), "b, a file now\n")
+        got = undone(repo, crlf, build)
+        check("restore undo: a file the build made a folder, and a folder it made a file — every line runs, a.txt "
+              "is a file and b/ a folder again, HEAD where it was and the index as HEAD" + tag,
+              not got["failed"] and got["after"] == got["before"] and os.path.isfile(os.path.join(repo, "a.txt"))
+              and os.path.isfile(os.path.join(repo, "b", "f.txt")) and git(repo, "rev-parse", "HEAD") == head
+              and git(repo, "diff", "--cached", "--name-only") == "",
+              got["failed"] + repr(sorted(got["after"])) + got["out"])
+
+
 @part("design")
 def design_opens_with_the_designer(tmp):
     """The design step (D60, D61): council run open council-plan and council-research write the fixed plan with the
@@ -11067,7 +11173,7 @@ def health_run_closes_on_its_path(tmp):
 
 @part("postgame")
 def postgame_opens_with_the_pair(tmp):
-    """A post-game (D67): council run open council-postgame (or postgame) writes the fixed plan with the reader and the
+    """A post-game (D68): council run open council-postgame (or postgame) writes the fixed plan with the reader and the
     runner, and the review's brief with the post-game block on its line, the parts line left for the Chair and both
     role texts word for word; the plan passes untouched; the next-step lines name the page's own sections, and Work
     can't be left out."""
@@ -11078,12 +11184,12 @@ def postgame_opens_with_the_pair(tmp):
     brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
     pcode, pout, perr = council(repo, "run", "plan", "check")
     check("run open postgame: the fixed plan selects the reader and the runner, names no model, and passes council "
-          "run plan check untouched (D67)",
+          "run plan check untouched (D68)",
           code == 0 and pcode == 0 and "plan: valid · squad" in pout and "\tcouncil-postgame\t" in plan
           and "seat\treader\trole\tworker" in plan and "seat\trunner\trole\tworker" in plan
           and "estimated-tokens\t500000" in plan and "\tmodel\t" not in plan, pout + perr + err + plan[:800])
     check("run open postgame: the brief is the review's with the post-game block, both roles word for word, the parts "
-          "line for the Chair, no build or health block and no {{…}} left (D67)",
+          "line for the Chair, no build or health block and no {{…}} left (D68)",
           "## This is a post-game: the finished work against the owner's request\n" in brief and len(roles) == 2
           and all(role in brief for role in roles) and "\nParts: <" in brief and "## This change is a build" not in brief
           and "## This is a health pass" not in brief and "{{" not in brief
@@ -11091,16 +11197,16 @@ def postgame_opens_with_the_pair(tmp):
     council(repo, "state", "phase=prepare")
     state = read(os.path.join(run, "session-state.md"))
     nxt = state.split("\nnext: ", 1)[-1].split("\n", 1)[0]
-    check("state postgame: Prepare's next step names the page's own section, never a doctrine file (D67)",
+    check("state postgame: Prepare's next step names the page's own section, never a doctrine file (D68)",
           "(council-postgame, section 2)" in nxt and "doctrine" not in nxt, state)
     code, out, err = council(repo, "state", "phase=judge")
-    check("state postgame: Judge straight after Prepare is refused, naming work (D67)",
+    check("state postgame: Judge straight after Prepare is refused, naming work (D68)",
           code == 2 and "would skip work" in err and "council state phase=work" in err, out + err)
 
 
 @part("postgame")
 def postgame_run_closes_on_its_path(tmp):
-    """A post-game on its page's path closes complete with the audit passing its stages (D67); its parts' quotes are
+    """A post-game on its page's path closes complete with the audit passing its stages (D68); its parts' quotes are
     checked against the request, and the closing card counts the Chair's verdicts in verify-self.md."""
     repo = small_council_repo(tmp, "postgame-close", "")
     code, run, err = council(repo, "run", "open", "council-postgame")
@@ -11140,15 +11246,15 @@ def postgame_run_closes_on_its_path(tmp):
     audit = read(os.path.join(run, "audit.md")) if os.path.isfile(os.path.join(run, "audit.md")) else ""
     scode, card, serr = council(repo, "status", "--run", os.path.basename(run))
     check("check postgame: a part that paraphrases the request is refused before the pair starts; the quoted parts "
-          "pass, and so does a next task quoting its part (D67)",
+          "pass, and so does a next task quoting its part (D68)",
           qcode == 1 and "synthesis#2  quote  NOT-IN-THE-REQUEST" in qout and ccode == 0
           and "synthesis#2  quote  ok" in cout and dcode == 0 and "next task 1  done-when  ok" in dout,
           qout + cout + cerr + dout + derr)
     check("run close: a post-game on its page's path closes complete and the audit passes its stages, never asking "
-          "for assign, brief or collect (D67)",
+          "for assign, brief or collect (D68)",
           code == 0 and "complete" in out and "Stages: convene > prepare > work > judge > challenge > deliver > learn"
           in audit and "never entered" not in audit and "FAIL" not in audit, out + err + audit[:1500])
-    check("status postgame: the closing card counts the Chair's verdicts from verify-self.md (D67)",
+    check("status postgame: the closing card counts the Chair's verdicts from verify-self.md (D68)",
           "1 of 2 parts of the request met" in card and "verify-self.md" in card, card + serr)
 
 

@@ -57,8 +57,8 @@ SKILLS = ["context-core", "council-init", "council-review", "council-plan", "cou
           "council-research", "council-postgame", "spec-writer", "test-architect", "council", "council-health"]
 MODES = ["council-review", "council-plan", "council-implement", "council-research", "council-postgame"]
 ONE_PAGE = ("council-review", "council-implement", "council-plan", "council-research",   # each its own page (D47,
-            "council-postgame")                                  # D56, D60, D67)
-STAGED = [m for m in MODES if m not in ONE_PAGE]   # on context-core's stages: none since D67
+            "council-postgame")                                  # D56, D60, D68)
+STAGED = [m for m in MODES if m not in ONE_PAGE]   # on context-core's stages: none since D68
 STAGES = ["convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn"]
 DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 
@@ -225,17 +225,17 @@ check("council-health: opens its own run with the reader, the runner only for wh
       and "`council book note" in health and "Nothing in the project changes and nothing is built" in health
       and "`council ask save`" in health and "<home>/reviews/<YYYY-MM-DD>-health.md" in health
       and "Propose its cost first" in description(skill["council-health"]))
-# The post-game (D67): its own page, on the review's path, the review's pair held to the owner's request part by part.
+# The post-game (D68): its own page, on the review's path, the review's pair held to the owner's request part by part.
 postgame_load = helper_stages.method_bytes("council-postgame", root=ROOT)
 check("method: a post-game's method load is its own page alone, no context-core and no doctrine, under 14,000 bytes "
-      "(D67)",
+      "(D68)",
       helper_stages.method_files("council-postgame") == ["skills/council-postgame/SKILL.md"]
       and "references/doctrine/" not in skill["council-postgame"] and "## At " not in skill["council-postgame"]
       and postgame_load < 14000, str(postgame_load))
 postgame = flat(skill["council-postgame"])
 check("council-postgame: opens its own run, splits the request into quoted parts before the pair starts, both agents "
       "in one message, each verdict checked by the Chair into verify-self.md and never raised, the post-game "
-      "template and its next tasks unchanged (D67)",
+      "template and its next tasks unchanged (D68)",
       "`council run open council-postgame`" in postgame and postgame.find("Split the request into numbered parts")
       < postgame.find("Both Agent calls in ONE message") and "`<run>/verify-self.md`" in postgame
       and "never raise one" in postgame and "references/templates/postgame.md" in postgame
@@ -243,7 +243,7 @@ check("council-postgame: opens its own run, splits the request into quoted parts
       and "Propose its size and cost first" in description(skill["council-postgame"]))
 postgame_block = read("references", "templates", "postgame-brief.md")
 check("postgame brief: the block goes on the review's {{POSTGAME}} line, the parts line for the Chair to fill, each "
-      "part's verdict on its index line, and never the plan or the logs (D67)",
+      "part's verdict on its index line, and never the plan or the logs (D68)",
       "{{POSTGAME}}" in review_brief and "[POSTGAME]" in postgame_block and "Parts: <" in postgame_block
       and "<MET | PARTLY MET | NOT MET | CAN'T TELL>" in postgame_block and "Never" in postgame_block
       and "read the plan, the build logs" in flat(postgame_block))
@@ -662,7 +662,7 @@ check("review page: points at resume.md, and resume.md says a review re-reads it
 check("review page: the helper call rule in one line, and no pipe into head, tail or grep",
       "plain `council <command>`" in review and "never piped into head, tail or grep" in flat(review))
 check("context-core: no mode invokes it; it is kept only to resume a post-game run opened on 2.0.0 or earlier, and "
-      "no mode's page names it (D47, D56, D60, D65, D67)",
+      "no mode's page names it (D47, D56, D60, D65, D68)",
       "opened on 2.0.0 or earlier" in description(core) and "review, plan" not in description(core)
       and not [m for m in MODES if "context-core" in skill[m].split("---", 2)[-1]])
 check("worker: a ref: none block with a role: takes the role as its lens and the brief's item format, and the "
@@ -765,9 +765,11 @@ check("09-deliver: the rulings go out as one AskUserQuestion — the harmless it
       "(Deliver, step 6)" in flat(skill["context-core"]) and
       not any("numbered rulings" in skill[s] for s in ["council-implement", "council-postgame"]))
 check("implement: the push/PR order is the freeze, then git fetch and gh pr list --state all (did the base move, did "
-      "a related PR merge), then pr-body.md printed for the user's edit or OK; the PR question only after it (#48)",
+      "a related PR merge), then pr-body.md written from the report and printed for the user's edit or OK; the PR "
+      "question only after it (#48)",
       "`git fetch`, then `gh pr list --state all`" in impl_deliver and "whether the base moved" in impl_deliver and
       "a related PR merged" in impl_deliver and "print `<run>/pr-body.md` for the user's edit or OK" in impl_deliver and
+      "write it from the report" in impl_deliver and
       "The PR question comes only after that OK" in impl_deliver and
       -1 < impl_deliver.find("**The freeze:**") < impl_deliver.find("**Fetch first:**") < impl_deliver.find("**The PR text:**"))
 check("pushes: the config template carries `- pushes: on` with off and off until a date; under a freeze the build "
