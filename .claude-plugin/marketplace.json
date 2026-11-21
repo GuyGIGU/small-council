@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "small-council",
-      "source": {"source": "github", "repo": "GuyGIGU/small-council", "ref": "release"},
+      "source": {"source": "url", "url": "https://github.com/GuyGIGU/small-council.git", "ref": "release"},
       "description": "A context-engineering council for Claude Code: tailored expert seats review, plan, build, and research in isolated context windows, debate the tough calls, verify adversarially, check finished work against your original request, fit the checks a project is missing, and report every build — shortcuts included — in plain language."
     }
   ]
